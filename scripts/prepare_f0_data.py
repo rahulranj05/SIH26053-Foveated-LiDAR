@@ -393,31 +393,96 @@ def find_rellis_split_lists(
     return result
 
 
-def normalize_frame_reference(
+def parse_rellis_frame_reference(
     value: str,
-) -> str:
+) -> Tuple[str, str]:
     """
-    Convert a split-list entry into a filename stem.
+    Parse a RELLIS file reference into a unique frame key:
 
-    Examples:
-        /path/000123.bin -> 000123
-        000123.label     -> 000123
-        000123           -> 000123
+        (sequence, frame_id)
+
+    Official RELLIS split-list entries look like:
+
+        00000/os1_cloud_node_kitti_bin/000307.bin
+        00000/os1_cloud_node_semantickitti_label_id/000307.label
+
+    Frame numbers are reused across sequences, therefore frame_id alone
+    is NOT a unique identifier.
     """
 
-    value = value.strip()
+    value = value.strip().replace("\\", "/")
 
     if not value:
-        return ""
+        raise ValueError(
+            "Empty RELLIS frame reference."
+        )
 
-    return Path(value).stem
+    parts = [
+        part
+        for part in value.split("/")
+        if part
+    ]
+
+    if len(parts) < 2:
+        raise ValueError(
+            "Unable to extract RELLIS sequence from reference: "
+            f"{value}"
+        )
+
+    sequence = None
+
+    for part in parts:
+        if (
+            len(part) == 5
+            and part.isdigit()
+        ):
+            sequence = part
+            break
+
+    if sequence is None:
+        raise ValueError(
+            "Unable to determine RELLIS sequence from reference: "
+            f"{value}"
+        )
+
+    frame_id = Path(
+        parts[-1]
+    ).stem
+
+    if not frame_id:
+        raise ValueError(
+            "Unable to determine RELLIS frame ID from reference: "
+            f"{value}"
+        )
+
+    return (
+        sequence,
+        frame_id,
+    )
 
 
 def read_rellis_split_ids(
     path: Path,
-) -> Set[str]:
+) -> Set[Tuple[str, str]]:
+    """
+    Read one official RELLIS split list.
 
-    ids = set()
+    Each line is expected to contain:
+
+        <point-cloud-path> <label-path>
+
+    Both references must identify the same (sequence, frame_id).
+
+    Returns a set of unique:
+        (sequence, frame_id)
+    """
+
+    frame_keys: Set[
+        Tuple[str, str]
+    ] = set()
+
+    duplicate_count = 0
+    line_count = 0
 
     with open(
         path,
@@ -426,56 +491,165 @@ def read_rellis_split_ids(
         errors="ignore",
     ) as file:
 
-        for line in file:
+        for line_number, line in enumerate(
+            file,
+            start=1,
+        ):
             stripped = line.strip()
 
             if not stripped:
                 continue
 
-            # Some split files contain more than one column.
+            line_count += 1
+
             parts = stripped.split()
 
-            candidates = {
-                normalize_frame_reference(part)
-                for part in parts
-            }
+            if len(parts) < 2:
+                raise ValueError(
+                    "Invalid RELLIS split-list line.\n"
+                    f"File: {path}\n"
+                    f"Line: {line_number}\n"
+                    f"Content: {stripped}"
+                )
 
-            candidates.discard("")
+            scan_reference = parts[0]
+            label_reference = parts[1]
 
-            ids.update(candidates)
+            scan_key = (
+                parse_rellis_frame_reference(
+                    scan_reference
+                )
+            )
 
-    return ids
+            label_key = (
+                parse_rellis_frame_reference(
+                    label_reference
+                )
+            )
+
+            if scan_key != label_key:
+                raise RuntimeError(
+                    "RELLIS scan/label reference mismatch.\n"
+                    f"File : {path}\n"
+                    f"Line : {line_number}\n"
+                    f"Scan : {scan_reference}\n"
+                    f"Label: {label_reference}\n"
+                    f"Scan key : {scan_key}\n"
+                    f"Label key: {label_key}"
+                )
+
+            if scan_key in frame_keys:
+                duplicate_count += 1
+
+            frame_keys.add(
+                scan_key
+            )
+
+    if not frame_keys:
+        raise RuntimeError(
+            f"RELLIS split list is empty: {path}"
+        )
+
+    print(
+        f"  Parsed {path.name:15s}: "
+        f"{len(frame_keys):,} unique frames"
+    )
+
+    if duplicate_count:
+        print(
+            f"    WARNING: {duplicate_count:,} "
+            "duplicate entries were present."
+        )
+
+    if len(frame_keys) != (
+        line_count - duplicate_count
+    ):
+        raise RuntimeError(
+            "Unexpected RELLIS split parsing inconsistency."
+        )
+
+    return frame_keys
 
 
 def subset_rellis_dataset(
     dataset: RELLISDataset,
-    allowed_ids: Set[str],
+    allowed_ids: Set[Tuple[str, str]],
 ) -> List[int]:
+    """
+    Match RELLIS loader samples against an official split.
+
+    Identity is:
+        (sequence, frame_id)
+
+    NOT frame_id alone.
+    """
 
     indices = []
+
+    matched_keys = set()
 
     for index, sample in enumerate(
         dataset.samples
     ):
-        frame_id = str(
-            sample["frame_id"]
+        key = (
+            str(sample["sequence"]).zfill(5),
+            str(sample["frame_id"]),
         )
 
-        if frame_id in allowed_ids:
-            indices.append(index)
+        if key in allowed_ids:
+            indices.append(
+                index
+            )
+
+            matched_keys.add(
+                key
+            )
+
+    missing = (
+        allowed_ids
+        - matched_keys
+    )
+
+    if missing:
+        examples = sorted(
+            missing
+        )[:10]
+
+        raise RuntimeError(
+            "Some official RELLIS split frames were not "
+            "found by RELLISDataset.\n"
+            f"Expected : {len(allowed_ids):,}\n"
+            f"Matched  : {len(matched_keys):,}\n"
+            f"Missing  : {len(missing):,}\n"
+            f"Examples : {examples}"
+        )
 
     return indices
-
 
 def prepare_rellis(
     config: Dict,
     roots: Dict,
 ):
-    root = roots["rellis_3d"]
+    """
+    Prepare RELLIS using its official train/val/test split lists.
+
+    Split identity is based on:
+        (sequence, frame_id)
+
+    This prevents false leakage caused by identical frame numbers
+    occurring in different RELLIS sequences.
+    """
+
+    root = Path(
+        roots["rellis_3d"]
+    )
 
     mapping_file = resolve_repo_path(
         config["mappings"]["rellis_3d"]
     )
+
+    print()
+    print("Preparing official RELLIS splits...")
 
     dataset = RELLISDataset(
         root=root,
@@ -483,62 +657,173 @@ def prepare_rellis(
         strict_labels=True,
     )
 
+    print(
+        f"  Loader samples : {len(dataset):,}"
+    )
+
     lists = find_rellis_split_lists(
         root
     )
 
+    print()
+    print("Parsing official RELLIS split lists:")
+
     ids = {
-        split: read_rellis_split_ids(path)
-        for split, path in lists.items()
+        split: read_rellis_split_ids(
+            path
+        )
+        for split, path
+        in lists.items()
     }
 
-    # --------------------------------------------------------
-    # Leakage check on list references
-    # --------------------------------------------------------
+    # ========================================================
+    # Strict leakage checks
+    # ========================================================
 
-    if ids["train"] & ids["val"]:
+    train_val_overlap = (
+        ids["train"]
+        & ids["val"]
+    )
+
+    train_test_overlap = (
+        ids["train"]
+        & ids["test"]
+    )
+
+    val_test_overlap = (
+        ids["val"]
+        & ids["test"]
+    )
+
+    if train_val_overlap:
         raise RuntimeError(
-            "RELLIS train/val overlap detected."
+            "REAL RELLIS train/val overlap detected.\n"
+            f"Count: {len(train_val_overlap):,}\n"
+            f"Examples: "
+            f"{sorted(train_val_overlap)[:10]}"
         )
 
-    if ids["train"] & ids["test"]:
+    if train_test_overlap:
         raise RuntimeError(
-            "RELLIS train/test overlap detected."
+            "REAL RELLIS train/test overlap detected.\n"
+            f"Count: {len(train_test_overlap):,}\n"
+            f"Examples: "
+            f"{sorted(train_test_overlap)[:10]}"
         )
 
-    if ids["val"] & ids["test"]:
+    if val_test_overlap:
         raise RuntimeError(
-            "RELLIS val/test overlap detected."
+            "REAL RELLIS val/test overlap detected.\n"
+            f"Count: {len(val_test_overlap):,}\n"
+            f"Examples: "
+            f"{sorted(val_test_overlap)[:10]}"
         )
+
+    print()
+    print(
+        "  PASS: train/val overlap  = 0"
+    )
+    print(
+        "  PASS: train/test overlap = 0"
+    )
+    print(
+        "  PASS: val/test overlap   = 0"
+    )
+
+    # ========================================================
+    # Match official lists against loader samples
+    # ========================================================
 
     indices = {
         split: subset_rellis_dataset(
             dataset,
             split_ids,
         )
-        for split, split_ids in ids.items()
+        for split, split_ids
+        in ids.items()
     }
+
+    print()
+    print("RELLIS matched split counts:")
 
     for split in (
         "train",
         "val",
         "test",
     ):
-        if not indices[split]:
+        expected = len(
+            ids[split]
+        )
+
+        matched = len(
+            indices[split]
+        )
+
+        print(
+            f"  {split:5s}: "
+            f"{matched:,} / {expected:,}"
+        )
+
+        if matched != expected:
+            raise RuntimeError(
+                "RELLIS split count mismatch.\n"
+                f"Split    : {split}\n"
+                f"Expected : {expected:,}\n"
+                f"Matched  : {matched:,}"
+            )
+
+        if matched == 0:
             raise RuntimeError(
                 "RELLIS official split produced "
-                f"zero matched frames for '{split}'."
+                f"zero frames for '{split}'."
             )
+
+    # ========================================================
+    # Verify split union does not contain duplicate identities
+    # ========================================================
+
+    total_split_frames = (
+        len(ids["train"])
+        + len(ids["val"])
+        + len(ids["test"])
+    )
+
+    union = (
+        ids["train"]
+        | ids["val"]
+        | ids["test"]
+    )
+
+    if len(union) != total_split_frames:
+        raise RuntimeError(
+            "RELLIS split union contains duplicate "
+            "frame identities."
+        )
+
+    print(
+        f"  PASS: total official split frames "
+        f"= {total_split_frames:,}"
+    )
 
     return {
         "dataset": dataset,
+
         "indices": indices,
+
+        "frame_keys": {
+            split: sorted(
+                split_ids
+            )
+            for split, split_ids
+            in ids.items()
+        },
+
         "list_files": {
             key: str(path)
-            for key, path in lists.items()
+            for key, path
+            in lists.items()
         },
     }
-
 
 # ============================================================
 # nuScenes scene-level split
