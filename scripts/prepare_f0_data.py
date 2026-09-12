@@ -1057,33 +1057,108 @@ def count_loader_labels(
     dataset,
     indices: Iterable[int],
 ) -> Counter:
+    """
+    Count unified semantic labels without loading point-cloud geometry.
+
+    This avoids calling dataset[index], which can read large LiDAR scans
+    from Google Drive. For class-frequency estimation we only need the
+    label files.
+    """
 
     counter = Counter()
 
-    for index in indices:
-        sample = dataset[index]
+    indices = list(indices)
+    total = len(indices)
 
-        labels = np.asarray(
-            sample[
-                "semantic_label"
-            ]
-        )
+    if total == 0:
+        return counter
 
-        ids, counts = np.unique(
-            labels,
+    start_time = time.perf_counter()
+
+    for position, index in enumerate(
+        indices,
+        start=1,
+    ):
+        sample = dataset.samples[index]
+
+        # ----------------------------------------------------
+        # Fast path: dataset exposes label_path plus its own
+        # native-label loader/remapper.
+        # ----------------------------------------------------
+        if (
+            "label_path" in sample
+            and hasattr(
+                dataset,
+                "_load_native_labels",
+            )
+            and hasattr(
+                dataset,
+                "_remap_labels",
+            )
+        ):
+            native_labels = (
+                dataset._load_native_labels(
+                    Path(
+                        sample["label_path"]
+                    )
+                )
+            )
+
+            semantic_labels = (
+                dataset._remap_labels(
+                    native_labels
+                )
+            )
+
+        # ----------------------------------------------------
+        # Fallback for loaders whose label representation is
+        # not compatible with the generic fast path.
+        # ----------------------------------------------------
+        else:
+            loaded = dataset[index]
+
+            semantic_labels = np.asarray(
+                loaded["semantic_label"]
+            )
+
+        unique, counts = np.unique(
+            semantic_labels,
             return_counts=True,
         )
 
         for class_id, count in zip(
-            ids,
+            unique,
             counts,
         ):
             counter[
                 int(class_id)
             ] += int(count)
 
-    return counter
+        # Progress report every 25 frames
+        if (
+            position % 25 == 0
+            or position == total
+        ):
+            elapsed = (
+                time.perf_counter()
+                - start_time
+            )
 
+            rate = (
+                position / elapsed
+                if elapsed > 0
+                else 0.0
+            )
+
+            print(
+                f"    {position:4d}/{total:4d} "
+                f"frames | "
+                f"{elapsed:7.1f}s | "
+                f"{rate:5.2f} frames/s",
+                flush=True,
+            )
+
+    return counter
 
 def select_distribution_indices(
     length: int,
