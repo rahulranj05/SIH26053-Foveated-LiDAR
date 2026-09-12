@@ -1,0 +1,160 @@
+version: 1
+
+classes:
+  0:
+    name: ignore
+    category: ignore
+    traversability_prior: null
+    dynamic_capable: false
+
+  # =========================
+  # GROUND / TERRAIN
+  # =========================
+
+  1:
+    name: paved_drivable
+    category: ground
+    traversability_prior: 1.0
+    dynamic_capable: false
+
+  2:
+    name: sidewalk
+    category: ground
+    traversability_prior: 0.65
+    dynamic_capable: false
+
+  3:
+    name: parking
+    category: ground
+    traversability_prior: 0.90
+    dynamic_capable: false
+
+  4:
+    name: natural_terrain
+    category: ground
+    traversability_prior: 0.55
+    dynamic_capable: false
+
+  5:
+    name: rough_ground
+    category: ground
+    traversability_prior: 0.35
+    dynamic_capable: false
+
+  6:
+    name: mud
+    category: ground
+    traversability_prior: 0.20
+    dynamic_capable: false
+
+  7:
+    name: rubble
+    category: ground
+    traversability_prior: 0.15
+    dynamic_capable: false
+
+  8:
+    name: water
+    category: ground
+    traversability_prior: 0.10
+    dynamic_capable: false
+
+  # =========================
+  # VEGETATION
+  # =========================
+
+  9:
+    name: low_vegetation
+    category: vegetation
+    traversability_prior: 0.35
+    dynamic_capable: false
+
+  10:
+    name: vegetation
+    category: vegetation
+    traversability_prior: 0.05
+    dynamic_capable: false
+
+  # =========================
+  # STRUCTURES / OBSTACLES
+  # =========================
+
+  11:
+    name: building
+    category: structure
+    traversability_prior: 0.0
+    dynamic_capable: false
+
+  12:
+    name: barrier
+    category: structure
+    traversability_prior: 0.0
+    dynamic_capable: false
+
+  13:
+    name: pole
+    category: structure
+    traversability_prior: 0.0
+    dynamic_capable: false
+
+  14:
+    name: sign
+    category: structure
+    traversability_prior: 0.0
+    dynamic_capable: false
+
+  15:
+    name: other_structure
+    category: structure
+    traversability_prior: 0.0
+    dynamic_capable: false
+
+  # =========================
+  # VEHICLES
+  # =========================
+
+  16:
+    name: car
+    category: vehicle
+    traversability_prior: 0.0
+    dynamic_capable: true
+
+  17:
+    name: heavy_vehicle
+    category: vehicle
+    traversability_prior: 0.0
+    dynamic_capable: true
+
+  18:
+    name: other_vehicle
+    category: vehicle
+    traversability_prior: 0.0
+    dynamic_capable: true
+
+  19:
+    name: motorcycle
+    category: vehicle
+    traversability_prior: 0.0
+    dynamic_capable: true
+
+  20:
+    name: bicycle
+    category: vehicle
+    traversability_prior: 0.0
+    dynamic_capable: true
+
+  # =========================
+  # HUMANS
+  # =========================
+
+  21:
+    name: person
+    category: human
+    traversability_prior: 0.0
+    dynamic_capable: true
+
+  22:
+    name: rider
+    category: human
+    traversability_prior: 0.0
+    dynamic_capable: true

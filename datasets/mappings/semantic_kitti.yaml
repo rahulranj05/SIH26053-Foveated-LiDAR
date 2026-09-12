@@ -1,0 +1,62 @@
+dataset: semantic_kitti
+version: 1
+
+ignore_label: 0
+
+mapping:
+  # Unlabeled / invalid
+  0: 0 # unlabeled
+  1: 0 # outlier
+
+  # Vehicles
+  10: 16 # car
+  11: 20 # bicycle
+  13: 17 # bus
+  15: 19 # motorcycle
+  16: 18 # on-rails
+  18: 17 # truck
+  20: 18 # other-vehicle
+
+  # Humans / riders
+  30: 21 # person
+  31: 22 # bicyclist
+  32: 22 # motorcyclist
+
+  # Ground
+  40: 1 # road
+  44: 3 # parking
+  48: 2 # sidewalk
+  49: 4 # other-ground
+
+  # Structures
+  50: 11 # building
+  51: 12 # fence
+  52: 15 # other-structure
+
+  # Road markings
+  60: 1 # lane-marking
+
+  # Vegetation / terrain
+  70: 10 # vegetation
+  71: 10 # trunk
+  72: 4 # terrain
+
+  # Thin structures
+  80: 13 # pole
+  81: 14 # traffic-sign
+
+  # Other objects
+  99: 15 # other-object
+
+  # Moving classes
+  # Motion is NOT kept as a semantic class.
+  # Moving objects are mapped back to their base semantic category.
+
+  252: 16 # moving-car
+  253: 22 # moving-bicyclist
+  254: 21 # moving-person
+  255: 22 # moving-motorcyclist
+  256: 18 # moving-on-rails
+  257: 17 # moving-bus
+  258: 17 # moving-truck
+  259: 18 # moving-other-vehicle
