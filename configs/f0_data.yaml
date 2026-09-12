@@ -1,0 +1,132 @@
+version: 1
+
+seed: 42
+
+ontology:
+  path: configs/ontology.yaml
+  num_classes: 23
+  ignore_index: 0
+
+mappings:
+  semantic_kitti: datasets/mappings/semantic_kitti.yaml
+  rellis_3d: datasets/mappings/rellis.yaml
+  semantic_stf: datasets/mappings/semantic_stf.yaml
+  nuscenes_mini: datasets/mappings/nuscenes.yaml
+
+# ============================================================
+# DATASET ROOTS
+# ============================================================
+# Actual roots are resolved automatically by datasets/paths.py.
+#
+# Google Drive top-level names:
+#
+# SemanticKITTI/
+# RELLIS_3D/
+# SemanticSTF/
+# nuScenes/
+# IITH/
+#
+# IIT-H is NOT part of F0 semantic training.
+
+# ============================================================
+# TRAIN / VALIDATION / TEST POLICY
+# ============================================================
+
+splits:
+
+  semantic_kitti:
+    # Standard supervised SemanticKITTI setup.
+    train_sequences:
+      - "00"
+      - "01"
+      - "02"
+      - "03"
+      - "04"
+      - "05"
+      - "06"
+      - "07"
+      - "09"
+      - "10"
+
+    val_sequences:
+      - "08"
+
+    # Official 11–21 are unlabeled.
+    # Therefore they cannot be used for supervised F0 test metrics.
+    test_sequences: []
+
+  semantic_stf:
+    train_split: train
+    val_split: val
+    test_split: test
+
+  rellis_3d:
+    # Use the official RELLIS split-list files already supplied
+    # with the dataset. prepare_f0_data.py will discover them.
+    use_official_lists: true
+
+  nuscenes_mini:
+    # nuScenes mini does not provide a useful semantic train/val/test
+    # split for our four-dataset F0 experiment, so we create a fixed
+    # scene-level split.
+    split_level: scene
+
+    train_fraction: 0.70
+    val_fraction: 0.15
+    test_fraction: 0.15
+
+# ============================================================
+# MULTI-DATASET TRAINING MIXTURE
+# ============================================================
+
+sampling:
+  semantic_kitti: 0.40
+  rellis_3d: 0.35
+  semantic_stf: 0.20
+  nuscenes_mini: 0.05
+
+# ============================================================
+# CLASS-WEIGHT GENERATION
+# ============================================================
+
+class_weights:
+  # ENet-style logarithmic inverse frequency:
+  #
+  #   weight_c = 1 / log(offset + p_c)
+  #
+  # More stable than pure inverse frequency for severe LiDAR imbalance.
+  method: log_inverse_frequency
+  log_offset: 1.02
+
+  # Prevent tiny rare classes from producing absurdly large weights.
+  min_weight: 0.25
+  max_weight: 8.0
+
+  # Class 0 is ignored by the loss.
+  ignore_weight: 0.0
+
+# ============================================================
+# CLASS DISTRIBUTION SCAN
+# ============================================================
+
+distribution:
+  # exact:
+  #   reads every TRAIN label file.
+  #
+  # sampled:
+  #   useful for debugging the script quickly.
+  mode: exact
+
+  sampled_frames_per_dataset: 300
+
+# ============================================================
+# OUTPUT
+# ============================================================
+
+output:
+  colab_directory: /content/drive/MyDrive/SIH26053/f0_preparation
+  local_directory: outputs/f0_preparation
+
+  manifest_filename: f0_data_manifest.json
+  weights_filename: f0_class_weights.json
+  distribution_filename: f0_class_distribution.json
