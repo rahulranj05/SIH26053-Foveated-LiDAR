@@ -272,47 +272,93 @@ def prepare_semantic_stf(
 # ============================================================
 # RELLIS split discovery
 # ============================================================
-
 def find_rellis_split_lists(
-    root: Path,
+    loader_root: Path,
 ) -> Dict[str, Path]:
     """
-    Discover official RELLIS list files.
+    Discover official RELLIS split-list files.
 
-    We intentionally do not invent a random RELLIS split when the
-    dataset already contains official split files.
+    The LiDAR loader root is usually:
+
+        .../RELLIS_3D/extracted/Rellis-3D
+
+    But the split-list files may live elsewhere under the
+    broader RELLIS_3D dataset directory.
+
+    Therefore search progressively upward from the loader root.
     """
 
-    list_files = list(root.rglob("*.lst"))
+    search_roots = [
+        loader_root,
+        loader_root.parent,
+        loader_root.parent.parent,
+    ]
+
+    list_files = []
+
+    for search_root in search_roots:
+        if not search_root.exists():
+            continue
+
+        found = sorted(
+            search_root.rglob("*.lst")
+        )
+
+        if found:
+            list_files = found
+            break
 
     if not list_files:
         raise FileNotFoundError(
-            "No RELLIS .lst split files found."
+            "No RELLIS .lst split files found.\n"
+            "Searched:\n"
+            + "\n".join(
+                f"  {path}"
+                for path in search_roots
+            )
+        )
+
+    print()
+    print("RELLIS split files discovered:")
+
+    for path in list_files:
+        print(
+            f"  {path}"
         )
 
     result = {}
 
     for path in list_files:
-        name = path.name.lower()
+        filename = (
+            path.name
+            .lower()
+            .replace("-", "_")
+        )
 
-        if "train" in name:
-            key = "train"
-        elif "val" in name:
-            key = "val"
-        elif "test" in name:
-            key = "test"
+        if "train" in filename:
+            split_name = "train"
+
+        elif (
+            "val" in filename
+            or "valid" in filename
+        ):
+            split_name = "val"
+
+        elif "test" in filename:
+            split_name = "test"
+
         else:
             continue
 
-        if key in result:
+        if split_name in result:
             raise RuntimeError(
-                "Multiple RELLIS split lists matched "
-                f"'{key}':\n"
-                f"{result[key]}\n"
-                f"{path}"
+                "Multiple RELLIS split-list files matched "
+                f"'{split_name}'.\n"
+                f"First : {result[split_name]}\n"
+                f"Second: {path}"
             )
 
-        result[key] = path
+        result[split_name] = path
 
     missing = (
         {"train", "val", "test"}
@@ -321,8 +367,27 @@ def find_rellis_split_lists(
 
     if missing:
         raise RuntimeError(
-            "Missing official RELLIS split list(s): "
-            f"{sorted(missing)}"
+            "RELLIS .lst files were found, but the "
+            "following split(s) could not be identified: "
+            f"{sorted(missing)}\n\n"
+            "Discovered files:\n"
+            + "\n".join(
+                f"  {path}"
+                for path in list_files
+            )
+        )
+
+    print()
+    print("RELLIS split mapping:")
+
+    for split_name in (
+        "train",
+        "val",
+        "test",
+    ):
+        print(
+            f"  {split_name:5s}: "
+            f"{result[split_name]}"
         )
 
     return result
