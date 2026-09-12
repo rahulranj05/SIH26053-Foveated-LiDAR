@@ -1,0 +1,35 @@
+dataset: rellis_3d
+version: 1
+
+ignore_label: 0
+
+mapping:
+  # Ignore / void
+  0: 0 # void
+
+  # Ground / terrain
+  1: 4 # dirt -> natural_terrain
+  3: 9 # grass -> low_vegetation
+  6: 8 # water
+  7: 0 # sky -> ignore
+  10: 1 # asphalt -> paved_drivable
+  23: 1 # concrete -> paved_drivable
+  31: 8 # puddle -> water
+  33: 6 # mud
+  34: 7 # rubble
+
+  # Vegetation
+  4: 10 # tree -> vegetation
+  19: 10 # bush -> vegetation
+  15: 15 # log -> other_structure / obstacle
+
+  # Structures / obstacles
+  5: 13 # pole
+  9: 15 # object -> other_structure
+  12: 11 # building
+  18: 12 # fence
+  27: 12 # barrier
+
+  # Dynamic-capable objects
+  8: 16 # vehicle -> car
+  17: 21 # person

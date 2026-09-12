@@ -1,0 +1,41 @@
+dataset: semantic_stf
+version: 1
+
+ignore_label: 0
+
+mapping:
+
+  # Ignore / invalid
+  0: 0      # unlabeled
+  20: 0     # invalid
+
+  # Vehicles
+  1: 16     # car
+  2: 20     # bicycle
+  3: 19     # motorcycle
+  4: 17     # truck -> heavy_vehicle
+  5: 18     # other-vehicle
+
+  # Humans / riders
+  6: 21     # person
+  7: 22     # bicyclist
+  8: 22     # motorcyclist
+
+  # Ground
+  9: 1      # road -> paved_drivable
+  10: 3     # parking
+  11: 2     # sidewalk
+  12: 4     # other-ground -> natural_terrain
+
+  # Structures
+  13: 11    # building
+  14: 12    # fence -> barrier
+
+  # Vegetation / terrain
+  15: 10    # vegetation
+  16: 10    # trunk
+  17: 4     # terrain -> natural_terrain
+
+  # Thin structures
+  18: 13    # pole
+  19: 14    # traffic-sign

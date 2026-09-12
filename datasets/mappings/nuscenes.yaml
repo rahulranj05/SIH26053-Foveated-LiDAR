@@ -1,0 +1,51 @@
+dataset: nuscenes_lidarseg
+version: 1
+
+ignore_label: 0
+
+mapping:
+  # Ignore / rare classes
+  0: 0 # noise
+  1: 0 # animal
+
+  # Humans
+  2: 21 # human.pedestrian.adult -> person
+  3: 21 # human.pedestrian.child -> person
+  4: 21 # human.pedestrian.construction_worker -> person
+  5: 21 # human.pedestrian.personal_mobility -> person
+  6: 21 # human.pedestrian.police_officer -> person
+  7: 21 # human.pedestrian.stroller -> person
+  8: 21 # human.pedestrian.wheelchair -> person
+
+  # Movable obstacles
+  9: 12 # movable_object.barrier -> barrier
+  10: 15 # movable_object.debris -> other_structure
+  11: 15 # movable_object.pushable_pullable -> other_structure
+  12: 14 # movable_object.trafficcone -> sign / thin obstacle
+  13: 15 # static_object.bicycle_rack -> other_structure
+
+  # Vehicles
+  14: 20 # vehicle.bicycle -> bicycle
+  15: 17 # vehicle.bus.bendy -> heavy_vehicle
+  16: 17 # vehicle.bus.rigid -> heavy_vehicle
+  17: 16 # vehicle.car -> car
+  18: 17 # vehicle.construction -> heavy_vehicle
+  19: 18 # vehicle.emergency.ambulance -> other_vehicle
+  20: 18 # vehicle.emergency.police -> other_vehicle
+  21: 19 # vehicle.motorcycle -> motorcycle
+  22: 18 # vehicle.trailer -> other_vehicle
+  23: 17 # vehicle.truck -> heavy_vehicle
+
+  # Ground / terrain
+  24: 1 # flat.driveable_surface -> paved_drivable
+  25: 4 # flat.other -> natural_terrain
+  26: 2 # flat.sidewalk -> sidewalk
+  27: 4 # flat.terrain -> natural_terrain
+
+  # Static environment
+  28: 11 # static.manmade -> building
+  29: 15 # static.other -> other_structure
+  30: 10 # static.vegetation -> vegetation
+
+  # Ego vehicle
+  31: 0 # vehicle.ego -> ignore
