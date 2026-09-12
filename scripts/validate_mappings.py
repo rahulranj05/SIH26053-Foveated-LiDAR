@@ -8,14 +8,28 @@ ONTOLOGY_FILE = Path(
 )
 
 MAPPING_FILES = [
-    Path("datasets/mappings/semantic_kitti.yaml"),
-    Path("datasets/mappings/rellis.yaml"),
-    Path("datasets/mappings/semantic_stf.yaml"),
-    Path("datasets/mappings/nuscenes.yaml"),
+    Path(
+        "datasets/mappings/"
+        "semantic_kitti.yaml"
+    ),
+    Path(
+        "datasets/mappings/"
+        "rellis.yaml"
+    ),
+    Path(
+        "datasets/mappings/"
+        "semantic_stf.yaml"
+    ),
+    Path(
+        "datasets/mappings/"
+        "nuscenes.yaml"
+    ),
 ]
 
 
-def load_yaml(path: Path):
+def load_yaml(
+    path: Path,
+):
     if not path.exists():
         raise FileNotFoundError(
             f"Missing file: {path}"
@@ -26,13 +40,23 @@ def load_yaml(path: Path):
         "r",
         encoding="utf-8",
     ) as file:
-        return yaml.safe_load(file)
+        data = yaml.safe_load(file)
+
+    if not isinstance(data, dict):
+        raise ValueError(
+            f"Invalid YAML document: {path}"
+        )
+
+    return data
 
 
 def main():
-    print("=" * 70)
-    print("UNIFIED ONTOLOGY / DATASET MAPPING VALIDATION")
-    print("=" * 70)
+    print("=" * 80)
+    print(
+        "UNIFIED ONTOLOGY / DATASET "
+        "MAPPING VALIDATION"
+    )
+    print("=" * 80)
 
     ontology = load_yaml(
         ONTOLOGY_FILE
@@ -43,30 +67,46 @@ def main():
         {}
     )
 
-    ontology_ids = {
-        int(class_id)
-        for class_id in classes.keys()
-    }
-
-    if not ontology_ids:
+    if not classes:
         raise RuntimeError(
             "Ontology contains no classes."
         )
 
-    print(
-        f"Ontology classes: {len(ontology_ids)}"
+    ontology_ids = {
+        int(class_id)
+        for class_id in classes
+    }
+
+    expected_ids = set(
+        range(23)
     )
 
-    print(
-        f"Ontology IDs: {sorted(ontology_ids)}"
-    )
+    if ontology_ids != expected_ids:
+        raise RuntimeError(
+            "Ontology IDs must be exactly 0–22.\n"
+            f"Observed: {sorted(ontology_ids)}"
+        )
 
+    if (
+        classes[0]["name"]
+        != "ignore"
+    ):
+        raise RuntimeError(
+            "Ontology class 0 must be 'ignore'."
+        )
+
+    print(
+        "Ontology IDs: 0–22"
+    )
+    print(
+        "Ontology classes: 23"
+    )
     print()
 
-    failures = 0
+    failures = []
 
     for mapping_file in MAPPING_FILES:
-        print("-" * 70)
+        print("-" * 80)
         print(mapping_file)
 
         config = load_yaml(
@@ -74,18 +114,28 @@ def main():
         )
 
         mapping = config.get(
-            "mapping",
-            {}
+            "mapping"
         )
 
         if not mapping:
-            print("FAIL: mapping is empty")
-            failures += 1
+            failures.append(
+                f"{mapping_file}: empty mapping"
+            )
             continue
+
+        ignore_label = config.get(
+            "ignore_label"
+        )
+
+        if ignore_label != 0:
+            failures.append(
+                f"{mapping_file}: "
+                "ignore_label must be 0"
+            )
 
         native_ids = {
             int(native)
-            for native in mapping.keys()
+            for native in mapping
         }
 
         unified_ids = {
@@ -98,42 +148,47 @@ def main():
             - ontology_ids
         )
 
-        print(
-            f"Native IDs mapped:  {len(native_ids)}"
-        )
-
-        print(
-            f"Unified IDs used:   {sorted(unified_ids)}"
-        )
-
         if invalid_targets:
-            print(
-                "FAIL: invalid ontology IDs:",
-                sorted(invalid_targets),
+            failures.append(
+                f"{mapping_file}: invalid targets "
+                f"{sorted(invalid_targets)}"
             )
 
-            failures += 1
+        print(
+            f"Native IDs mapped : {len(native_ids)}"
+        )
 
-        else:
+        print(
+            "Unified IDs used  : "
+            f"{sorted(unified_ids)}"
+        )
+
+        if not invalid_targets:
             print(
-                "PASS: all targets exist "
-                "in unified ontology"
+                "PASS: mapping targets are valid"
             )
 
     print()
-    print("=" * 70)
+    print("=" * 80)
 
     if failures:
+        print("FAILURES:")
+
+        for failure in failures:
+            print(
+                f"  - {failure}"
+            )
+
         raise RuntimeError(
-            f"Mapping validation failed: "
-            f"{failures} problem(s)"
+            f"{len(failures)} mapping "
+            "validation problem(s)"
         )
 
     print(
-        "PASS: ALL DATASET MAPPINGS ARE VALID"
+        "PASS: ALL ONTOLOGY AND "
+        "MAPPING CHECKS PASSED"
     )
-
-    print("=" * 70)
+    print("=" * 80)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,132 @@
+version: 1
+
+seed: 42
+
+# ============================================================
+# Gate 1 philosophy
+# ============================================================
+# Gate 1 validates the DATA PIPELINE only.
+#
+# It does NOT:
+# - train SPVCNN
+# - calculate model mIoU
+# - perform early stopping
+# - use "patience"
+#
+# Those belong to Gate 2 / baseline training.
+
+ontology:
+  path: configs/ontology.yaml
+  expected_num_classes: 23
+  ignore_index: 0
+
+mappings:
+  semantic_kitti: datasets/mappings/semantic_kitti.yaml
+  rellis_3d: datasets/mappings/rellis.yaml
+  semantic_stf: datasets/mappings/semantic_stf.yaml
+  nuscenes_mini: datasets/mappings/nuscenes.yaml
+
+# ============================================================
+# Expected labelled sample counts
+# ============================================================
+
+datasets:
+  semantic_kitti:
+    expected_samples: 23201
+    internal_name: semantic_kitti
+
+  rellis_3d:
+    expected_samples: 13556
+    internal_name: rellis_3d
+
+  semantic_stf:
+    expected_samples: 2076
+    internal_name: semantic_stf
+
+  nuscenes_mini:
+    expected_samples: 404
+    internal_name: nuscenes_mini
+
+# ============================================================
+# Real-frame validation
+# ============================================================
+
+validation:
+  # Distributed frames from beginning/middle/end/random.
+  frames_per_dataset: 8
+
+  require_finite_xyz: true
+  require_finite_intensity: true
+  require_known_native_ids: true
+  require_unified_ids_in_ontology: true
+
+# ============================================================
+# Benchmark mode
+# ============================================================
+
+benchmark:
+  # Keep this low because Google Drive I/O is the bottleneck.
+  frames_per_dataset: 5
+
+# ============================================================
+# Visualization
+# ============================================================
+
+visualization:
+  enabled: true
+
+  # Downsample only for plotting. Validation still uses all points.
+  max_points_per_plot: 50000
+
+  point_size: 0.7
+
+# ============================================================
+# Split integrity checks
+# ============================================================
+
+splits:
+
+  # Standard SemanticKITTI supervised semantic split.
+  #
+  # Sequence 08 is validation.
+  # Official sequences 11-21 are unlabeled test data and therefore
+  # are NOT used for supervised semantic accuracy.
+  semantic_kitti:
+    train_sequences:
+      - "00"
+      - "01"
+      - "02"
+      - "03"
+      - "04"
+      - "05"
+      - "06"
+      - "07"
+      - "09"
+      - "10"
+
+    val_sequences:
+      - "08"
+
+  semantic_stf:
+    expected:
+      train: 1326
+      val: 250
+      test: 500
+
+# RELLIS and nuScenes split policy will be frozen immediately
+# after Gate 1 because their current loaders do not yet expose
+# an explicit train/val/test API.
+#
+# Gate 1 must NOT pretend to validate a split that the loader
+# does not actually implement.
+
+# ============================================================
+# Output
+# ============================================================
+
+output:
+  # Used when running in Colab.
+  colab_directory: /content/drive/MyDrive/SIH26053/gate1
+
+  # Used when running locally.
+  local_directory: outputs/gate1

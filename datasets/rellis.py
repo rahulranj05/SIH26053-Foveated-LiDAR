@@ -7,9 +7,11 @@ import yaml
 
 class RELLISDataset:
     """
-    RELLIS-3D semantic LiDAR loader.
+    RELLIS-3D LiDAR semantic segmentation loader.
 
-    Native labels are converted into the project's unified ontology.
+    Canonical SIH26053 root:
+
+    .../RELLIS_3D/extracted/Rellis-3D
     """
 
     DEFAULT_SEQUENCES = (
@@ -20,17 +22,39 @@ class RELLISDataset:
         "00004",
     )
 
+    POINT_DIRECTORY_CANDIDATES = (
+        "os1_cloud_node_kitti_bin",
+        "velodyne",
+        "points",
+        "lidar",
+    )
+
+    LABEL_DIRECTORY_CANDIDATES = (
+        "os1_cloud_node_semantickitti_label_id",
+        "labels",
+        "label",
+    )
+
     def __init__(
         self,
-        root: str,
-        mapping_file: str = "datasets/mappings/rellis.yaml",
+        root,
+        mapping_file="datasets/mappings/rellis.yaml",
         sequences: Optional[Sequence[str]] = None,
+        strict_labels: bool = True,
     ):
         self.root = Path(root)
         self.mapping_file = Path(mapping_file)
+        self.strict_labels = strict_labels
+
+        if not self.root.exists():
+            raise FileNotFoundError(
+                f"RELLIS root not found: {self.root}"
+            )
 
         if sequences is None:
-            self.sequences = list(self.DEFAULT_SEQUENCES)
+            self.sequences = list(
+                self.DEFAULT_SEQUENCES
+            )
         else:
             self.sequences = [
                 str(sequence).zfill(5)
@@ -43,13 +67,14 @@ class RELLISDataset:
 
         if not self.samples:
             raise RuntimeError(
-                f"No RELLIS scan-label pairs found under: {self.root}"
+                "No RELLIS scan-label pairs found under:\n"
+                f"{self.root}"
             )
 
     def _load_mapping(self) -> Dict[int, int]:
         if not self.mapping_file.exists():
             raise FileNotFoundError(
-                f"Mapping file not found: {self.mapping_file}"
+                f"Mapping not found: {self.mapping_file}"
             )
 
         with open(
@@ -59,21 +84,19 @@ class RELLISDataset:
         ) as file:
             config = yaml.safe_load(file)
 
-        if "mapping" not in config:
-            raise KeyError(
-                f"'mapping' missing from {self.mapping_file}"
+        mapping = config.get("mapping")
+
+        if not mapping:
+            raise RuntimeError(
+                f"Empty RELLIS mapping: {self.mapping_file}"
             )
 
         return {
-            int(native_id): int(unified_id)
-            for native_id, unified_id
-            in config["mapping"].items()
+            int(native): int(unified)
+            for native, unified in mapping.items()
         }
 
-    def _build_lookup_table(self) -> np.ndarray:
-        if not self.mapping:
-            raise RuntimeError("RELLIS mapping is empty.")
-
+    def _build_lookup_table(self):
         maximum = max(self.mapping)
 
         lookup = np.zeros(
@@ -81,76 +104,175 @@ class RELLISDataset:
             dtype=np.uint8,
         )
 
-        for native_id, unified_id in self.mapping.items():
-            lookup[native_id] = unified_id
+        for native, unified in self.mapping.items():
+            lookup[native] = unified
 
         return lookup
 
-    def _discover_samples(self) -> List[Dict]:
+    @staticmethod
+    def _find_named_directory(
+        sequence_root: Path,
+        candidates,
+    ):
+        for name in candidates:
+            direct = (
+                sequence_root
+                / name
+            )
+
+            if direct.is_dir():
+                return direct
+
+        for child in sequence_root.iterdir():
+            if (
+                child.is_dir()
+                and child.name.lower()
+                in {
+                    name.lower()
+                    for name in candidates
+                }
+            ):
+                return child
+
+        return None
+
+    def _get_sequence_root(
+        self,
+        sequence: str,
+    ) -> Path:
+
+        direct = (
+            self.root
+            / sequence
+        )
+
+        if direct.is_dir():
+            return direct
+
+        matches = [
+            path
+            for path in self.root.glob(
+                f"*/{sequence}"
+            )
+            if path.is_dir()
+        ]
+
+        if len(matches) == 1:
+            return matches[0]
+
+        if not matches:
+            raise FileNotFoundError(
+                f"RELLIS sequence not found: {sequence}"
+            )
+
+        raise RuntimeError(
+            "Multiple RELLIS sequence directories found for "
+            f"{sequence}:\n"
+            + "\n".join(
+                str(path)
+                for path in matches
+            )
+        )
+
+    def _discover_sequence(
+        self,
+        sequence: str,
+    ) -> List[Dict]:
+
+        sequence_root = (
+            self._get_sequence_root(
+                sequence
+            )
+        )
+
+        point_dir = (
+            self._find_named_directory(
+                sequence_root,
+                self.POINT_DIRECTORY_CANDIDATES,
+            )
+        )
+
+        label_dir = (
+            self._find_named_directory(
+                sequence_root,
+                self.LABEL_DIRECTORY_CANDIDATES,
+            )
+        )
+
+        if point_dir is not None:
+            point_files = sorted(
+                point_dir.glob("*.bin")
+            )
+        else:
+            point_files = sorted(
+                sequence_root.rglob("*.bin")
+            )
+
+        if label_dir is not None:
+            label_files = sorted(
+                label_dir.glob("*.label")
+            )
+        else:
+            label_files = sorted(
+                sequence_root.rglob("*.label")
+            )
+
+        if not point_files:
+            raise RuntimeError(
+                f"No RELLIS .bin files in {sequence_root}"
+            )
+
+        if not label_files:
+            raise RuntimeError(
+                f"No RELLIS .label files in {sequence_root}"
+            )
+
+        label_index = {}
+
+        for label_path in label_files:
+            stem = label_path.stem
+
+            if stem in label_index:
+                raise RuntimeError(
+                    "Duplicate RELLIS label filename within "
+                    f"sequence {sequence}: {stem}"
+                )
+
+            label_index[stem] = label_path
+
+        samples = []
+
+        for scan_path in point_files:
+            label_path = label_index.get(
+                scan_path.stem
+            )
+
+            if label_path is None:
+                raise FileNotFoundError(
+                    "Missing RELLIS label for scan:\n"
+                    f"{scan_path}"
+                )
+
+            samples.append(
+                {
+                    "sequence": sequence,
+                    "frame_id": scan_path.stem,
+                    "scan_path": scan_path,
+                    "label_path": label_path,
+                }
+            )
+
+        return samples
+
+    def _discover_samples(self):
         samples = []
 
         for sequence in self.sequences:
-            sequence_directories = [
-                path
-                for path in self.root.rglob(sequence)
-                if path.is_dir()
-            ]
-
-            if not sequence_directories:
-                continue
-
-            sequence_directory = sequence_directories[0]
-
-            point_files = []
-
-            for path in sequence_directory.rglob("*"):
-                if not path.is_file():
-                    continue
-
-                if path.suffix.lower() not in {
-                    ".bin",
-                    ".npy",
-                }:
-                    continue
-
-                if "label" in str(path).lower():
-                    continue
-
-                point_files.append(path)
-
-            label_index = {}
-
-            for path in sequence_directory.rglob("*"):
-                if not path.is_file():
-                    continue
-
-                if path.suffix.lower() not in {
-                    ".label",
-                    ".npy",
-                }:
-                    continue
-
-                if "label" not in str(path).lower():
-                    continue
-
-                label_index[path.stem] = path
-
-            for scan_path in sorted(point_files):
-                label_path = label_index.get(
-                    scan_path.stem
+            samples.extend(
+                self._discover_sequence(
+                    sequence
                 )
-
-                if label_path is None:
-                    continue
-
-                samples.append(
-                    {
-                        "sequence": sequence,
-                        "frame_id": scan_path.stem,
-                        "scan_path": scan_path,
-                        "label_path": label_path,
-                    }
-                )
+            )
 
         samples.sort(
             key=lambda item: (
@@ -162,60 +284,73 @@ class RELLISDataset:
         return samples
 
     @staticmethod
-    def _load_scan(scan_path: Path) -> np.ndarray:
-        if scan_path.suffix.lower() == ".npy":
-            scan = np.load(scan_path)
-
-            if scan.ndim != 2 or scan.shape[1] < 3:
-                raise ValueError(
-                    f"Invalid RELLIS scan: {scan_path}"
-                )
-
-            return scan.astype(
-                np.float32,
-                copy=False,
-            )
+    def _load_scan(
+        scan_path: Path,
+    ) -> np.ndarray:
 
         raw = np.fromfile(
             scan_path,
             dtype=np.float32,
         )
 
-        if raw.size % 4 == 0:
-            return raw.reshape(-1, 4)
+        if raw.size % 4 != 0:
+            raise ValueError(
+                "RELLIS scan is not Nx4:\n"
+                f"{scan_path}"
+            )
 
-        if raw.size % 3 == 0:
-            return raw.reshape(-1, 3)
+        scan = raw.reshape(-1, 4)
 
-        raise ValueError(
-            f"Unable to determine point format: {scan_path}"
-        )
+        if not np.isfinite(scan).all():
+            raise ValueError(
+                "RELLIS scan contains NaN/Inf:\n"
+                f"{scan_path}"
+            )
+
+        return scan
 
     @staticmethod
     def _load_native_labels(
         label_path: Path,
     ) -> np.ndarray:
 
-        if label_path.suffix.lower() == ".npy":
-            return np.load(
-                label_path
-            ).reshape(-1).astype(
-                np.uint16,
-                copy=False,
-            )
-
         return np.fromfile(
             label_path,
             dtype=np.uint32,
-        ).astype(
-            np.uint16,
-            copy=False,
         )
+
+    def _check_native_ids(
+        self,
+        native_labels,
+    ):
+        if not self.strict_labels:
+            return
+
+        observed = set(
+            map(
+                int,
+                np.unique(native_labels),
+            )
+        )
+
+        unknown = (
+            observed
+            - set(self.mapping)
+        )
+
+        if unknown:
+            raise ValueError(
+                "RELLIS native IDs missing from mapping:\n"
+                f"{sorted(unknown)}"
+            )
 
     def _remap_labels(
         self,
-        native_labels: np.ndarray,
-    ) -> np.ndarray:
+        native_labels,
+    ):
+        self._check_native_ids(
+            native_labels
+        )
 
         unified = np.zeros(
             native_labels.shape,
@@ -227,52 +362,50 @@ class RELLISDataset:
             < len(self.lookup_table)
         )
 
-        unified[valid] = self.lookup_table[
-            native_labels[valid]
-        ]
+        unified[valid] = (
+            self.lookup_table[
+                native_labels[valid]
+            ]
+        )
 
         return unified
 
     def __len__(self):
         return len(self.samples)
 
-    def __getitem__(self, index: int) -> Dict:
+    def __getitem__(
+        self,
+        index,
+    ):
         sample = self.samples[index]
 
         scan = self._load_scan(
             sample["scan_path"]
         )
 
-        native_labels = self._load_native_labels(
-            sample["label_path"]
+        native_labels = (
+            self._load_native_labels(
+                sample["label_path"]
+            )
         )
 
         if len(scan) != len(native_labels):
             raise ValueError(
-                "Point/label count mismatch\n"
+                "RELLIS point/label mismatch:\n"
+                f"Frame: {sample['frame_id']}\n"
                 f"Points: {len(scan)}\n"
                 f"Labels: {len(native_labels)}"
             )
 
-        xyz = scan[:, :3].astype(
-            np.float32,
-            copy=False,
-        )
-
-        if scan.shape[1] >= 4:
-            intensity = scan[:, 3].astype(
+        return {
+            "xyz": scan[:, :3].astype(
                 np.float32,
                 copy=False,
-            )
-        else:
-            intensity = np.zeros(
-                len(scan),
-                dtype=np.float32,
-            )
-
-        return {
-            "xyz": xyz,
-            "intensity": intensity,
+            ),
+            "intensity": scan[:, 3].astype(
+                np.float32,
+                copy=False,
+            ),
             "native_label": native_labels,
             "semantic_label": self._remap_labels(
                 native_labels
@@ -280,8 +413,12 @@ class RELLISDataset:
             "dataset": "rellis_3d",
             "sequence": sample["sequence"],
             "frame_id": sample["frame_id"],
-            "scan_path": str(sample["scan_path"]),
-            "label_path": str(sample["label_path"]),
+            "scan_path": str(
+                sample["scan_path"]
+            ),
+            "label_path": str(
+                sample["label_path"]
+            ),
         }
 
 
