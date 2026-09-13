@@ -1,0 +1,88 @@
+version: 1
+
+seed: 42
+
+model:
+  name: spvcnn_f0
+  num_classes: 23
+  ignore_index: 0
+  # F0 is intentionally plain SPVCNN. No spherical attention in the baseline.
+  variant: baseline
+
+data:
+  # Persistent cache roots. At runtime, copy required TARs to local /content
+  # and point the trainer at the local cache path.
+  train_cache_drive: /content/drive/MyDrive/SIH26053/f0_tar_cache
+  val_cache_drive: /content/drive/MyDrive/SIH26053/f0_tar_cache/val
+  test_cache_drive: /content/drive/MyDrive/SIH26053/f0_tar_cache/test
+
+  local_root: /content/f0_training_cache
+  train_split: train
+  val_split: val
+  test_split: test
+
+  voxel_size_m: 0.05
+  feature_mode: intensity
+
+  mixture:
+    semantic_kitti: 0.40
+    rellis_3d: 0.35
+    semantic_stf: 0.20
+    nuscenes_mini: 0.05
+
+  augment:
+    enabled: true
+    random_z_rotation_deg: 180.0
+    random_flip_xy: true
+    scale_min: 0.95
+    scale_max: 1.05
+    translation_std_m: 0.10
+
+loss:
+  # Final class weights will be generated from the exact distribution.
+  class_weights_json: /content/drive/MyDrive/SIH26053/f0_tar_cache/f0_class_weights_exact.json
+  cross_entropy_weight: 1.0
+  lovasz_weight: 1.0
+
+optimizer:
+  name: adamw
+  learning_rate: 0.001
+  weight_decay: 0.0001
+
+scheduler:
+  name: cosine
+  warmup_epochs: 2
+  min_learning_rate: 0.00001
+
+training:
+  max_epochs: 80
+  early_stopping_patience: 12
+  batch_size: 4
+  gradient_accumulation_steps: 1
+  num_workers: 4
+  pin_memory: true
+  amp: true
+  validate_every_epochs: 1
+  checkpoint_metric: miou
+  checkpoint_mode: max
+
+gate2:
+  overfit_frames: 8
+  overfit_max_steps: 300
+  smoke_train_frames: 64
+  smoke_val_frames: 32
+  smoke_epochs: 1
+
+checkpoint:
+  directory: /content/drive/MyDrive/SIH26053/checkpoints/f0
+  save_last: true
+  save_best: true
+  resume: auto
+
+evaluation:
+  range_bands_m:
+    - [0, 10]
+    - [10, 25]
+    - [25, 50]
+    - [50, 75]
+    - [75, 100]
