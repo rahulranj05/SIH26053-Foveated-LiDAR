@@ -25,10 +25,10 @@ data:
   feature_mode: intensity
 
   mixture:
-    semantic_kitti: 0.40
+    semantic_kitti: 0.50
     rellis_3d: 0.35
-    semantic_stf: 0.20
-    nuscenes_mini: 0.05
+    semantic_stf: 0.13
+    nuscenes_mini: 0.02
 
   augment:
     enabled: true

@@ -21,7 +21,7 @@ mapping:
   9: 12 # movable_object.barrier -> barrier
   10: 15 # movable_object.debris -> other_structure
   11: 15 # movable_object.pushable_pullable -> other_structure
-  12: 14 # movable_object.trafficcone -> sign / thin obstacle
+  12: 15 # movable_object.trafficcone -> other_structure
   13: 15 # static_object.bicycle_rack -> other_structure
 
   # Vehicles
@@ -43,7 +43,7 @@ mapping:
   27: 4 # flat.terrain -> natural_terrain
 
   # Static environment
-  28: 11 # static.manmade -> building
+  28: 15 # static.manmade -> other_structure
   29: 15 # static.other -> other_structure
   30: 10 # static.vegetation -> vegetation
 

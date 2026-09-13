@@ -31,5 +31,5 @@ mapping:
   27: 12 # barrier
 
   # Dynamic-capable objects
-  8: 16 # vehicle -> car
+  8: 18 # generic vehicle -> other_vehicle
   17: 21 # person

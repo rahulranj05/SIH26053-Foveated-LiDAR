@@ -837,15 +837,10 @@ def load_json(path: Path):
     ) as file:
         return json.load(file)
 
-
 def prepare_nuscenes(
     config: Dict,
     roots: Dict,
 ):
-    seed = int(
-        config["seed"]
-    )
-
     split_cfg = (
         config["splits"]["nuscenes_mini"]
     )
@@ -854,37 +849,107 @@ def prepare_nuscenes(
         config["mappings"]["nuscenes_mini"]
     )
 
+    # ========================================================
+    # Load nuScenes dataset
+    # ========================================================
+
     dataset = NuScenesMiniDataset(
         root=roots["nuscenes_mini"],
         mapping_file=mapping_file,
         strict_labels=True,
     )
 
-    metadata_dir = (
-        dataset.metadata_dir
-    )
+    metadata_dir = dataset.metadata_dir
 
     sample_data = load_json(
-        metadata_dir
-        / "sample_data.json"
+        metadata_dir / "sample_data.json"
     )
 
     sample_table = load_json(
-        metadata_dir
-        / "sample.json"
+        metadata_dir / "sample.json"
     )
 
-    # sample_data token -> sample token
+    # ========================================================
+    # Load FROZEN scene split
+    # ========================================================
+
+    split_file = resolve_repo_path(
+        split_cfg["split_file"]
+    )
+
+    frozen_split = load_yaml(
+        split_file
+    )
+
+    if (
+        frozen_split.get("dataset")
+        != "nuscenes_mini"
+    ):
+        raise RuntimeError(
+            "Invalid nuScenes split file: "
+            f"{split_file}"
+        )
+
+    if (
+        frozen_split.get("split_level")
+        != "scene"
+    ):
+        raise RuntimeError(
+            "nuScenes split must be scene-level."
+        )
+
+    train_scenes = set(
+        frozen_split["train_scenes"]
+    )
+
+    val_scenes = set(
+        frozen_split["val_scenes"]
+    )
+
+    test_scenes = set(
+        frozen_split["test_scenes"]
+    )
+
+    # ========================================================
+    # Verify frozen scene sets themselves
+    # ========================================================
+
+    if train_scenes & val_scenes:
+        raise RuntimeError(
+            "nuScenes train/val scene leakage."
+        )
+
+    if train_scenes & test_scenes:
+        raise RuntimeError(
+            "nuScenes train/test scene leakage."
+        )
+
+    if val_scenes & test_scenes:
+        raise RuntimeError(
+            "nuScenes val/test scene leakage."
+        )
+
+    frozen_scene_union = (
+        train_scenes
+        | val_scenes
+        | test_scenes
+    )
+
+    # ========================================================
+    # Metadata lookup:
+    #
+    # sample_data token
+    #       -> sample token
+    #       -> scene token
+    # ========================================================
+
     sample_data_to_sample = {
-        row["token"]:
-            row["sample_token"]
+        row["token"]: row["sample_token"]
         for row in sample_data
     }
 
-    # sample token -> scene token
     sample_to_scene = {
-        row["token"]:
-            row["scene_token"]
+        row["token"]: row["scene_token"]
         for row in sample_table
     }
 
@@ -897,11 +962,31 @@ def prepare_nuscenes(
             sample["token"]
         )
 
+        if (
+            sample_data_token
+            not in sample_data_to_sample
+        ):
+            raise RuntimeError(
+                "nuScenes sample_data token missing "
+                "from sample_data.json: "
+                f"{sample_data_token}"
+            )
+
         sample_token = (
             sample_data_to_sample[
                 sample_data_token
             ]
         )
+
+        if (
+            sample_token
+            not in sample_to_scene
+        ):
+            raise RuntimeError(
+                "nuScenes sample token missing "
+                "from sample.json: "
+                f"{sample_token}"
+            )
 
         scene_token = (
             sample_to_scene[
@@ -909,98 +994,46 @@ def prepare_nuscenes(
             ]
         )
 
-        frame_scene[index] = scene_token
+        frame_scene[index] = (
+            scene_token
+        )
 
-    scenes = sorted(
-        set(frame_scene.values())
+    # ========================================================
+    # Verify that the frozen scene list exactly matches
+    # the scenes represented by the lidarseg dataset.
+    # ========================================================
+
+    observed_scenes = set(
+        frame_scene.values()
     )
 
-    rng = random.Random(seed)
-    rng.shuffle(scenes)
-
-    train_fraction = float(
-        split_cfg["train_fraction"]
+    missing_from_dataset = (
+        frozen_scene_union
+        - observed_scenes
     )
 
-    val_fraction = float(
-        split_cfg["val_fraction"]
+    unexpected_in_dataset = (
+        observed_scenes
+        - frozen_scene_union
     )
 
-    test_fraction = float(
-        split_cfg["test_fraction"]
-    )
-
-    total_fraction = (
-        train_fraction
-        + val_fraction
-        + test_fraction
-    )
-
-    if not np.isclose(
-        total_fraction,
-        1.0,
-    ):
+    if missing_from_dataset:
         raise RuntimeError(
-            "nuScenes split fractions "
-            "must sum to 1.0."
+            "Frozen nuScenes scene(s) are missing "
+            "from the dataset:\n"
+            f"{sorted(missing_from_dataset)}"
         )
 
-    n_scenes = len(scenes)
-
-    n_train = max(
-        1,
-        round(
-            n_scenes
-            * train_fraction
-        ),
-    )
-
-    n_val = max(
-        1,
-        round(
-            n_scenes
-            * val_fraction
-        ),
-    )
-
-    # Let test receive the remainder.
-    if (
-        n_train
-        + n_val
-        >= n_scenes
-    ):
-        n_val = max(
-            1,
-            n_scenes
-            - n_train
-            - 1,
-        )
-
-    train_scenes = set(
-        scenes[:n_train]
-    )
-
-    val_scenes = set(
-        scenes[
-            n_train:
-            n_train + n_val
-        ]
-    )
-
-    test_scenes = set(
-        scenes[
-            n_train + n_val:
-        ]
-    )
-
-    if (
-        train_scenes & val_scenes
-        or train_scenes & test_scenes
-        or val_scenes & test_scenes
-    ):
+    if unexpected_in_dataset:
         raise RuntimeError(
-            "nuScenes scene-level split leakage."
+            "nuScenes contains scene(s) not present "
+            "in the frozen split:\n"
+            f"{sorted(unexpected_in_dataset)}"
         )
+
+    # ========================================================
+    # Assign frames according to frozen SCENE membership
+    # ========================================================
 
     indices = {
         "train": [],
@@ -1008,31 +1041,128 @@ def prepare_nuscenes(
         "test": [],
     }
 
-    for index, scene in (
+    for index, scene_token in (
         frame_scene.items()
     ):
-        if scene in train_scenes:
+        if scene_token in train_scenes:
             indices["train"].append(
                 index
             )
-        elif scene in val_scenes:
+
+        elif scene_token in val_scenes:
             indices["val"].append(
                 index
             )
-        elif scene in test_scenes:
+
+        elif scene_token in test_scenes:
             indices["test"].append(
                 index
             )
 
-    for split in indices:
-        if not indices[split]:
+        else:
             raise RuntimeError(
-                "nuScenes split produced "
-                f"zero frames for {split}."
+                "nuScenes frame belongs to an "
+                "unassigned scene: "
+                f"{scene_token}"
             )
+
+    # ========================================================
+    # Basic non-empty checks
+    # ========================================================
+
+    for split_name in (
+        "train",
+        "val",
+        "test",
+    ):
+        if not indices[split_name]:
+            raise RuntimeError(
+                "nuScenes frozen split produced "
+                f"zero frames for '{split_name}'."
+            )
+
+    # ========================================================
+    # Check expected frame counts from split YAML
+    # ========================================================
+
+    expected_counts = (
+        frozen_split.get(
+            "expected_frame_counts",
+            {},
+        )
+    )
+
+    for split_name in (
+        "train",
+        "val",
+        "test",
+    ):
+        if split_name in expected_counts:
+            expected = int(
+                expected_counts[
+                    split_name
+                ]
+            )
+
+            actual = len(
+                indices[
+                    split_name
+                ]
+            )
+
+            if actual != expected:
+                raise RuntimeError(
+                    "nuScenes frozen split frame "
+                    "count mismatch.\n"
+                    f"Split    : {split_name}\n"
+                    f"Expected : {expected}\n"
+                    f"Actual   : {actual}"
+                )
+
+    # ========================================================
+    # Final integrity check
+    # ========================================================
+
+    total_frames = (
+        len(indices["train"])
+        + len(indices["val"])
+        + len(indices["test"])
+    )
+
+    if total_frames != len(dataset):
+        raise RuntimeError(
+            "nuScenes frozen split does not cover "
+            "the full lidarseg dataset.\n"
+            f"Dataset frames : {len(dataset)}\n"
+            f"Split frames   : {total_frames}"
+        )
+
+    print()
+    print("nuScenes frozen scene split:")
+    print(
+        f"  train: "
+        f"{len(train_scenes)} scenes, "
+        f"{len(indices['train']):,} frames"
+    )
+    print(
+        f"  val  : "
+        f"{len(val_scenes)} scenes, "
+        f"{len(indices['val']):,} frames"
+    )
+    print(
+        f"  test : "
+        f"{len(test_scenes)} scenes, "
+        f"{len(indices['test']):,} frames"
+    )
+
+    print(
+        "  PASS: frozen scene assignments "
+        "cover all nuScenes-mini lidarseg frames"
+    )
 
     return {
         "dataset": dataset,
+
         "indices": indices,
 
         "scenes": {
@@ -1046,8 +1176,11 @@ def prepare_nuscenes(
                 test_scenes
             ),
         },
-    }
 
+        "split_file": str(
+            split_file
+        ),
+    }
 
 # ============================================================
 # Class distribution

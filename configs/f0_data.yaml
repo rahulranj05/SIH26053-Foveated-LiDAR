@@ -71,39 +71,19 @@ splits:
     # scene-level split.
     split_level: scene
 
-    train_fraction: 0.70
-    val_fraction: 0.15
-    test_fraction: 0.15
+nuscenes_mini:
+  split_level: scene
+  split_file: configs/nuscenes_mini_split_v1.yaml
 
 # ============================================================
 # MULTI-DATASET TRAINING MIXTURE
 # ============================================================
 
 sampling:
-  semantic_kitti: 0.40
+  semantic_kitti: 0.50
   rellis_3d: 0.35
-  semantic_stf: 0.20
-  nuscenes_mini: 0.05
-
-# ============================================================
-# CLASS-WEIGHT GENERATION
-# ============================================================
-
-class_weights:
-  # ENet-style logarithmic inverse frequency:
-  #
-  #   weight_c = 1 / log(offset + p_c)
-  #
-  # More stable than pure inverse frequency for severe LiDAR imbalance.
-  method: log_inverse_frequency
-  log_offset: 1.02
-
-  # Prevent tiny rare classes from producing absurdly large weights.
-  min_weight: 0.25
-  max_weight: 8.0
-
-  # Class 0 is ignored by the loss.
-  ignore_weight: 0.0
+  semantic_stf: 0.13
+  nuscenes_mini: 0.02
 
 # ============================================================
 # CLASS DISTRIBUTION SCAN

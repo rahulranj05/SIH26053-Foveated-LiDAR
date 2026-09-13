@@ -1,0 +1,26 @@
+version: 1
+dataset: nuscenes_mini
+split_level: scene
+
+seed_used_for_original_generation: 42
+
+train_scenes:
+  - 6f83169d067343658251f72e1dd17dbc
+  - bebf5f5b2a674631ab5c88fd1aa9e87a
+  - cc8c0bf57f984915a77078b10eb33198
+  - d25718445d89453381c659b9c8734939
+  - de7d80a1f5fb4c3e82ce8a4f213b450a
+  - e233467e827140efa4b42d2b4c435855
+  - fcbccedd61424f1b85dcbf8f897f9754
+
+val_scenes:
+  - 2fc3753772e241f2ab2cd16a784cc680
+  - c5224b9b454b4ded9b5d2d2634bbda8a
+
+test_scenes:
+  - 325cef682f064c55a255f2625c533b75
+
+expected_frame_counts:
+  train: 282
+  val: 81
+  test: 41
