@@ -1,16 +1,15 @@
 """
-A25 — Temporal Motion Estimation
+A25/A37 — Temporal Motion Estimation
 
-Estimates per-point temporal motion evidence between consecutive LiDAR
-SensorFrames.
+A25:
+    Estimates per-point temporal motion evidence between consecutive
+    LiDAR SensorFrames.
 
-A25 is simulator- and dataset-independent. It does not perform ego-motion
-compensation; that is intentionally separated into A26.
+A37:
+    Optimizes nearest-neighbour correspondence using a dependency-free
+    uniform spatial hash.
 
-The module compares spatial point occupancy between consecutive frames and
-produces a deterministic per-point dynamic probability in [0, 1].
-
-A25 does not modify A1–A24.
+The public A25 API and semantics are preserved.
 """
 
 from __future__ import annotations
@@ -26,22 +25,6 @@ from mapping.sensor_frame import SensorFrame
 class TemporalMotionConfig:
     """
     Configuration for temporal motion estimation.
-
-    Parameters
-    ----------
-    voxel_size:
-        Spatial voxel size in metres used to establish coarse correspondence.
-
-    motion_threshold:
-        Distance in metres above which unmatched displacement contributes
-        strongly to motion evidence.
-
-    max_correspondence_distance:
-        Maximum distance between corresponding occupied voxels.
-
-    min_probability:
-        Minimum probability assigned to points with temporal evidence.
-
     """
 
     voxel_size: float = 0.20
@@ -97,10 +80,10 @@ def _voxel_keys(
     xyz: np.ndarray,
     voxel_size: float,
 ) -> np.ndarray:
-    """
-    Convert XYZ coordinates into integer voxel coordinates.
-    """
-    return np.floor(xyz / voxel_size).astype(np.int64)
+    """Convert XYZ coordinates into integer voxel coordinates."""
+    return np.floor(
+        xyz / voxel_size
+    ).astype(np.int64)
 
 
 def _unique_voxel_centres(
@@ -108,17 +91,31 @@ def _unique_voxel_centres(
     voxel_size: float,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Return unique voxel keys and their representative point-centres.
+    Return unique voxel keys and representative point centres.
 
-    The representative centre is the mean of all points occupying each
-    voxel. The returned arrays are deterministic.
+    The representative centre is the mean of all points occupying
+    each voxel.
+
+    Returns
+    -------
+    tuple[np.ndarray, np.ndarray]
+        ``(unique_keys, centres)``.
     """
-    keys = _voxel_keys(xyz, voxel_size)
+    keys = _voxel_keys(
+        xyz,
+        voxel_size,
+    )
 
     if keys.shape[0] == 0:
         return (
-            np.empty((0, 3), dtype=np.int64),
-            np.empty((0, 3), dtype=np.float64),
+            np.empty(
+                (0, 3),
+                dtype=np.int64,
+            ),
+            np.empty(
+                (0, 3),
+                dtype=np.float64,
+            ),
         )
 
     unique_keys, inverse = np.unique(
@@ -132,7 +129,9 @@ def _unique_voxel_centres(
         dtype=np.float64,
     )
 
-    counts = np.bincount(inverse)
+    counts = np.bincount(
+        inverse
+    ).astype(np.float64)
 
     for axis in range(3):
         centres[:, axis] = np.bincount(
@@ -145,19 +144,21 @@ def _unique_voxel_centres(
     return unique_keys, centres
 
 
-def _nearest_distances(
+def _nearest_distances_bruteforce(
     source: np.ndarray,
     target: np.ndarray,
 ) -> np.ndarray:
     """
-    Calculate nearest-neighbour distances from source to target.
+    Exact O(N*M) reference nearest-neighbour implementation.
 
-    Uses a vectorized squared-distance matrix. A25 is intended for
-    deterministic moderate-size temporal validation; A26/A37 can replace
-    this backend with spatial indexing/optimized correspondence.
+    Retained as a correctness reference for A37 and for compatibility
+    with the original A25 implementation.
     """
     if source.shape[0] == 0:
-        return np.empty(0, dtype=np.float64)
+        return np.empty(
+            0,
+            dtype=np.float64,
+        )
 
     if target.shape[0] == 0:
         return np.full(
@@ -175,7 +176,274 @@ def _nearest_distances(
     )
 
     return np.sqrt(
-        np.min(distances_squared, axis=1)
+        np.min(
+            distances_squared,
+            axis=1,
+        )
+    )
+
+
+def _build_spatial_hash(
+    target: np.ndarray,
+    cell_size: float,
+) -> dict[tuple[int, int, int], np.ndarray]:
+    """
+    Build a uniform spatial hash over target points.
+
+    Each hash key identifies one cubic spatial cell and maps to the
+    indices of target points inside that cell.
+    """
+    if target.shape[0] == 0:
+        return {}
+
+    if (
+        not np.isfinite(cell_size)
+        or cell_size <= 0.0
+    ):
+        raise ValueError(
+            "cell_size must be finite and > 0"
+        )
+
+    keys = np.floor(
+        target / cell_size
+    ).astype(np.int64)
+
+    order = np.lexsort(
+        (
+            keys[:, 2],
+            keys[:, 1],
+            keys[:, 0],
+        )
+    )
+
+    sorted_keys = keys[order]
+
+    boundaries = (
+        np.flatnonzero(
+            np.any(
+                sorted_keys[1:]
+                != sorted_keys[:-1],
+                axis=1,
+            )
+        )
+        + 1
+    )
+
+    starts = np.concatenate(
+        (
+            np.array(
+                [0],
+                dtype=np.int64,
+            ),
+            boundaries,
+        )
+    )
+
+    ends = np.concatenate(
+        (
+            boundaries,
+            np.array(
+                [sorted_keys.shape[0]],
+                dtype=np.int64,
+            ),
+        )
+    )
+
+    spatial_hash: dict[
+        tuple[int, int, int],
+        np.ndarray,
+    ] = {}
+
+    for start, end in zip(
+        starts,
+        ends,
+    ):
+        key_array = sorted_keys[start]
+
+        key = (
+            int(key_array[0]),
+            int(key_array[1]),
+            int(key_array[2]),
+        )
+
+        spatial_hash[key] = order[start:end]
+
+    return spatial_hash
+
+
+def _nearest_distances_within_radius(
+    source: np.ndarray,
+    target: np.ndarray,
+    radius: float,
+    *,
+    cell_size: float | None = None,
+) -> np.ndarray:
+    """
+    Calculate nearest target distances within a finite radius.
+
+    A uniform spatial hash limits distance calculations to nearby
+    target cells.
+
+    Points with no target within ``radius`` receive ``np.inf``.
+    """
+    if source.shape[0] == 0:
+        return np.empty(
+            0,
+            dtype=np.float64,
+        )
+
+    if target.shape[0] == 0:
+        return np.full(
+            source.shape[0],
+            np.inf,
+            dtype=np.float64,
+        )
+
+    if (
+        not np.isfinite(radius)
+        or radius <= 0.0
+    ):
+        raise ValueError(
+            "radius must be finite and > 0"
+        )
+
+    if cell_size is None:
+        cell_size = radius
+
+    if (
+        not np.isfinite(cell_size)
+        or cell_size <= 0.0
+    ):
+        raise ValueError(
+            "cell_size must be finite and > 0"
+        )
+
+    spatial_hash = _build_spatial_hash(
+        target,
+        cell_size,
+    )
+
+    source_keys = np.floor(
+        source / cell_size
+    ).astype(np.int64)
+
+    radius_squared = radius * radius
+
+    neighbour_range = int(
+        np.ceil(
+            radius / cell_size
+        )
+    )
+
+    distances = np.full(
+        source.shape[0],
+        np.inf,
+        dtype=np.float64,
+    )
+
+    unique_source_keys, inverse = np.unique(
+        source_keys,
+        axis=0,
+        return_inverse=True,
+    )
+
+    for group_index, source_key in enumerate(
+        unique_source_keys
+    ):
+        source_indices = np.flatnonzero(
+            inverse == group_index
+        )
+
+        sx = int(source_key[0])
+        sy = int(source_key[1])
+        sz = int(source_key[2])
+
+        candidate_chunks: list[np.ndarray] = []
+
+        for dx in range(
+            -neighbour_range,
+            neighbour_range + 1,
+        ):
+            for dy in range(
+                -neighbour_range,
+                neighbour_range + 1,
+            ):
+                for dz in range(
+                    -neighbour_range,
+                    neighbour_range + 1,
+                ):
+                    candidate_indices = spatial_hash.get(
+                        (
+                            sx + dx,
+                            sy + dy,
+                            sz + dz,
+                        )
+                    )
+
+                    if candidate_indices is not None:
+                        candidate_chunks.append(
+                            candidate_indices
+                        )
+
+        if not candidate_chunks:
+            continue
+
+        candidate_indices = np.concatenate(
+            candidate_chunks
+        )
+
+        source_points = source[
+            source_indices
+        ]
+
+        target_points = target[
+            candidate_indices
+        ]
+
+        differences = (
+            source_points[:, None, :]
+            - target_points[None, :, :]
+        )
+
+        distances_squared = np.sum(
+            differences * differences,
+            axis=2,
+        )
+
+        local_min_squared = np.min(
+            distances_squared,
+            axis=1,
+        )
+
+        valid = (
+            local_min_squared
+            <= radius_squared
+        )
+
+        if np.any(valid):
+            valid_indices = source_indices[
+                valid
+            ]
+
+            distances[valid_indices] = np.sqrt(
+                local_min_squared[valid]
+            )
+
+    return distances
+
+
+def _nearest_distances(
+    source: np.ndarray,
+    target: np.ndarray,
+) -> np.ndarray:
+    """
+    Preserve the original A25 private helper semantics.
+
+    The production temporal path uses the optimized spatial-hash backend.
+    """
+    return _nearest_distances_bruteforce(
+        source,
+        target,
     )
 
 
@@ -187,39 +455,27 @@ def temporal_motion_evidence(
     """
     Estimate motion evidence for every point in the current frame.
 
-    Evidence is based on the nearest occupied spatial voxel representation
-    from the previous frame.
-
     Values are in [0, 1]:
 
     - 0.0 means strong temporal consistency.
-    - 1.0 means the current point has no sufficiently close previous
-      correspondence.
-
-    Parameters
-    ----------
-    previous_xyz:
-        Previous-frame XYZ points, shape (N, 3).
-
-    current_xyz:
-        Current-frame XYZ points, shape (M, 3).
-
-    config:
-        Temporal motion configuration.
-
-    Returns
-    -------
-    np.ndarray
-        Per-current-point motion evidence with shape (M,).
+    - 1.0 means no sufficiently close previous correspondence.
     """
     if config is None:
         config = TemporalMotionConfig()
 
-    previous = _validate_xyz(previous_xyz)
-    current = _validate_xyz(current_xyz)
+    previous = _validate_xyz(
+        previous_xyz
+    )
+
+    current = _validate_xyz(
+        current_xyz
+    )
 
     if current.shape[0] == 0:
-        return np.empty(0, dtype=np.float64)
+        return np.empty(
+            0,
+            dtype=np.float64,
+        )
 
     if previous.shape[0] == 0:
         return np.ones(
@@ -232,21 +488,28 @@ def temporal_motion_evidence(
         config.voxel_size,
     )
 
-    distances = _nearest_distances(
+    distances = _nearest_distances_within_radius(
         current,
         previous_centres,
+        config.max_correspondence_distance,
+        cell_size=config.max_correspondence_distance,
     )
 
     threshold = config.motion_threshold
     maximum = config.max_correspondence_distance
 
     if maximum <= threshold:
-        normalized = distances > threshold
-        evidence = normalized.astype(np.float64)
+        evidence = (
+            distances > threshold
+        ).astype(np.float64)
     else:
         evidence = np.clip(
-            (distances - threshold)
-            / (maximum - threshold),
+            (
+                distances - threshold
+            )
+            / (
+                maximum - threshold
+            ),
             0.0,
             1.0,
         )
@@ -270,19 +533,19 @@ def temporal_dynamic_probability(
 ) -> np.ndarray:
     """
     Estimate per-point dynamic probability for the current frame.
-
-    The timestamp interval is used as a consistency check. A non-positive
-    interval is rejected because temporal motion requires chronological
-    frames.
-
-    The current frame's XYZ coordinates receive the resulting probabilities.
     """
-    if not isinstance(previous_frame, SensorFrame):
+    if not isinstance(
+        previous_frame,
+        SensorFrame,
+    ):
         raise TypeError(
             "previous_frame must be a SensorFrame"
         )
 
-    if not isinstance(current_frame, SensorFrame):
+    if not isinstance(
+        current_frame,
+        SensorFrame,
+    ):
         raise TypeError(
             "current_frame must be a SensorFrame"
         )
@@ -312,8 +575,6 @@ def temporal_motion_signal(
 ) -> dict[str, np.ndarray]:
     """
     Return an A20-compatible dynamic signal dictionary.
-
-    The returned dictionary uses the canonical ``dynamic`` signal namespace.
     """
     return {
         "dynamic": temporal_dynamic_probability(
