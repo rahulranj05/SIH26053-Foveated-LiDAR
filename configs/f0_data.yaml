@@ -33,7 +33,6 @@ mappings:
 # ============================================================
 
 splits:
-
   semantic_kitti:
     # Standard supervised SemanticKITTI setup.
     train_sequences:
@@ -51,33 +50,43 @@ splits:
     val_sequences:
       - "08"
 
-    # Official 11–21 are unlabeled.
-    # Therefore they cannot be used for supervised F0 test metrics.
+    # Official sequences 11-21 are unlabeled.
+    # Therefore they are not used for supervised F0 test metrics.
     test_sequences: []
 
   semantic_stf:
+    # Use the dataset's official split directories.
     train_split: train
     val_split: val
     test_split: test
 
   rellis_3d:
-    # Use the official RELLIS split-list files already supplied
-    # with the dataset. prepare_f0_data.py will discover them.
+    # Use the official RELLIS split-list files:
+    # pt_train.lst
+    # pt_val.lst
+    # pt_test.lst
+    #
+    # Frame identity must be:
+    # (sequence, frame_id)
     use_official_lists: true
 
   nuscenes_mini:
-    # nuScenes mini does not provide a useful semantic train/val/test
-    # split for our four-dataset F0 experiment, so we create a fixed
-    # scene-level split.
+    # nuScenes-mini uses a permanently frozen scene-level split.
+    #
+    # We do NOT recalculate 70/15/15 every run.
+    # The exact 7 train / 2 val / 1 test scene tokens are stored
+    # in the file below.
     split_level: scene
-
-nuscenes_mini:
-  split_level: scene
-  split_file: configs/nuscenes_mini_split_v1.yaml
+    split_file: configs/nuscenes_mini_split_v1.yaml
 
 # ============================================================
 # MULTI-DATASET TRAINING MIXTURE
 # ============================================================
+#
+# Reduced oversampling of the smaller SemanticSTF and
+# nuScenes-mini datasets.
+#
+# ExactMixtureSampler uses these as per-epoch target ratios.
 
 sampling:
   semantic_kitti: 0.50
@@ -88,13 +97,30 @@ sampling:
 # ============================================================
 # CLASS DISTRIBUTION SCAN
 # ============================================================
+#
+# This section is for data-distribution inspection only.
+#
+# IMPORTANT:
+# Training class weights are NOT authoritative here.
+# Final training weights are generated separately from the
+# exact TRAIN distribution using:
+#
+# scripts/compute_f0_class_weights.py
+#
+# Authoritative files:
+#
+# /content/drive/MyDrive/SIH26053/f0_tar_cache/
+#     f0_class_distribution_exact.json
+#     f0_class_weights_exact.json
+#
+# Validation/test data must never contribute to class weights.
 
 distribution:
   # exact:
   #   reads every TRAIN label file.
   #
   # sampled:
-  #   useful for debugging the script quickly.
+  #   only for quick diagnostics/debugging.
   mode: exact
 
   sampled_frames_per_dataset: 300
@@ -108,5 +134,4 @@ output:
   local_directory: outputs/f0_preparation
 
   manifest_filename: f0_data_manifest.json
-  weights_filename: f0_class_weights.json
   distribution_filename: f0_class_distribution.json

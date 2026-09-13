@@ -1328,104 +1328,6 @@ def select_distribution_indices(
     )
 
 
-def calculate_class_weights(
-    counts: Dict[int, int],
-    config: Dict,
-) -> Dict[int, float]:
-
-    weight_cfg = (
-        config["class_weights"]
-    )
-
-    if (
-        weight_cfg["method"]
-        != "log_inverse_frequency"
-    ):
-        raise RuntimeError(
-            "Unsupported class-weight method."
-        )
-
-    ignore_index = int(
-        config["ontology"]["ignore_index"]
-    )
-
-    total = sum(
-        count
-        for class_id, count
-        in counts.items()
-        if class_id != ignore_index
-    )
-
-    offset = float(
-        weight_cfg["log_offset"]
-    )
-
-    minimum = float(
-        weight_cfg["min_weight"]
-    )
-
-    maximum = float(
-        weight_cfg["max_weight"]
-    )
-
-    weights = {}
-
-    for class_id in range(
-        int(
-            config["ontology"][
-                "num_classes"
-            ]
-        )
-    ):
-        if class_id == ignore_index:
-            weights[class_id] = float(
-                weight_cfg[
-                    "ignore_weight"
-                ]
-            )
-
-            continue
-
-        count = int(
-            counts.get(
-                class_id,
-                0,
-            )
-        )
-
-        if count == 0:
-            # No direct training supervision.
-            weights[class_id] = 0.0
-            continue
-
-        probability = (
-            count
-            / total
-        )
-
-        weight = (
-            1.0
-            / np.log(
-                offset
-                + probability
-            )
-        )
-
-        weight = float(
-            np.clip(
-                weight,
-                minimum,
-                maximum,
-            )
-        )
-
-        weights[
-            class_id
-        ] = weight
-
-    return weights
-
-
 # ============================================================
 # Main
 # ============================================================
@@ -1493,7 +1395,7 @@ def main():
     # --------------------------------------------------------
 
     print(
-        "\n[1/5] Preparing splits..."
+        "\n[1/4] Preparing splits..."
     )
 
     semantic_kitti = (
@@ -1576,7 +1478,7 @@ def main():
     # --------------------------------------------------------
 
     print(
-        "\n[2/5] Training sampling mixture..."
+        "\n[2/4] Training sampling mixture..."
     )
 
     probabilities = {
@@ -1609,7 +1511,7 @@ def main():
     # --------------------------------------------------------
 
     print(
-        "\n[3/5] Computing unified TRAIN "
+        "\n[3/4] Computing unified TRAIN "
         "class distribution..."
     )
 
@@ -1871,35 +1773,30 @@ def main():
         )
 
     # --------------------------------------------------------
-    # Weights
+    # Save frozen manifest and distribution
     # --------------------------------------------------------
+    #
+    # IMPORTANT:
+    #
+    # This script prepares/finalizes:
+    #
+    #   1. dataset splits
+    #   2. training sampling mixture
+    #   3. unified class distribution
+    #   4. F0 preparation manifest
+    #
+    # It intentionally DOES NOT generate training class weights.
+    #
+    # Authoritative class weights are generated separately from
+    # the exact TRAIN distribution using:
+    #
+    #     scripts/compute_f0_class_weights.py
+    #
+    # Validation/test data must never contribute to class weights.
+
 
     print(
-        "\n[4/5] Deriving class weights..."
-    )
-
-    weights = (
-        calculate_class_weights(
-            combined,
-            config,
-        )
-    )
-
-    for class_id in range(
-        len(classes)
-    ):
-        print(
-            f"  {class_id:2d} "
-            f"{classes[class_id]['name']:22s} "
-            f"{weights[class_id]:.4f}"
-        )
-
-    # --------------------------------------------------------
-    # Save frozen manifest
-    # --------------------------------------------------------
-
-    print(
-        "\n[5/5] Saving F0 data manifest..."
+        "\n[4/4] Saving F0 data manifest..."
     )
 
     manifest = {
@@ -2002,13 +1899,6 @@ def main():
         },
     }
 
-    weights_json = {
-        str(class_id):
-            float(weight)
-        for class_id, weight
-        in weights.items()
-    }
-
     manifest_path = (
         output_dir
         / config[
@@ -2027,15 +1917,6 @@ def main():
         ]
     )
 
-    weights_path = (
-        output_dir
-        / config[
-            "output"
-        ][
-            "weights_filename"
-        ]
-    )
-
     save_json(
         manifest_path,
         manifest,
@@ -2044,11 +1925,6 @@ def main():
     save_json(
         distribution_path,
         distribution_json,
-    )
-
-    save_json(
-        weights_path,
-        weights_json,
     )
 
     runtime = (
@@ -2078,14 +1954,9 @@ def main():
         f"{distribution_path}"
     )
 
-    print(
-        f"Class weights: "
-        f"{weights_path}"
-    )
-
     print()
     print(
-        "NEXT: inspect split counts and "
+        "NEXT: verify frozen splits and exact TRAIN "
         "class distribution before Gate 2."
     )
 
