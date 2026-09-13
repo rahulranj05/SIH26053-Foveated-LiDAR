@@ -1,0 +1,29 @@
+version: 1
+
+source:
+  split: train
+  audit_file: /content/drive/MyDrive/SIH26053/f0_tar_cache/f0_intensity_audit_train.json
+  seed: 42
+
+policy:
+  mode: per_dataset_robust_minmax
+  lower_percentile: p1
+  upper_percentile: p99
+  output_range: [0.0, 1.0]
+
+datasets:
+  semantic_kitti:
+    lower: 0.0
+    upper: 0.64
+
+  rellis_3d:
+    lower: 0.0
+    upper: 0.00868238
+
+  semantic_stf:
+    lower: 11.40000057
+    upper: 255.0
+
+  nuscenes_mini:
+    lower: 0.0
+    upper: 100.0
