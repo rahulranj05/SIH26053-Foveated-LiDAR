@@ -152,6 +152,18 @@ def _validate_safety_mode(
 def _extract_leaf_count(
     leaf_map: Any,
 ) -> int:
+    """
+    Extract the number of final leaf cells from a hierarchical map.
+
+    A18.3 currently represents ``levels`` as a NumPy array containing
+    one level identifier per final leaf cell. Older/alternative
+    representations may expose ``levels`` as a mapping of resolution
+    to cell collections, so both representations are supported here.
+
+    This function is deliberately kept in the dashboard adapter so
+    that no frozen mapping implementation needs to be modified.
+    """
+
     if leaf_map is None:
         return 0
 
@@ -162,21 +174,48 @@ def _extract_leaf_count(
     )
 
     if levels is not None:
-        try:
+        # Mapping-style representation:
+        # {
+        #     resolution: collection_of_cells,
+        #     ...
+        # }
+        if isinstance(
+            levels,
+            Mapping,
+        ):
             return int(
                 sum(
                     len(level)
                     for level in levels.values()
                 )
             )
-        except AttributeError:
-            pass
 
-    if hasattr(leaf_map, "leaf_count"):
-        return int(leaf_map.leaf_count)
+        # A18.3 representation:
+        # one level value per final leaf cell.
+        levels_array = np.asarray(levels)
 
-    if hasattr(leaf_map, "__len__"):
-        return int(len(leaf_map))
+        if levels_array.ndim == 0:
+            return 1
+
+        return int(
+            levels_array.size
+        )
+
+    if hasattr(
+        leaf_map,
+        "leaf_count",
+    ):
+        return int(
+            leaf_map.leaf_count
+        )
+
+    if hasattr(
+        leaf_map,
+        "__len__",
+    ):
+        return int(
+            len(leaf_map)
+        )
 
     raise TypeError(
         "unable to determine leaf count from leaf_map"
@@ -186,6 +225,18 @@ def _extract_leaf_count(
 def _extract_resolution_counts(
     leaf_map: Any,
 ) -> dict[float, int]:
+    """
+    Extract final-leaf counts grouped by resolution.
+
+    Supports both:
+
+    1. Mapping-style hierarchical representations where ``levels``
+       maps resolution -> cells.
+
+    2. A18.3's compact representation where ``resolutions`` is a
+       NumPy array containing one resolution per final leaf cell.
+    """
+
     if leaf_map is None:
         return {}
 
@@ -195,19 +246,52 @@ def _extract_resolution_counts(
         None,
     )
 
-    if levels is None:
-        return {}
+    if isinstance(
+        levels,
+        Mapping,
+    ):
+        result: dict[float, int] = {}
 
-    result: dict[float, int] = {}
+        for resolution, cells in levels.items():
+            result[float(resolution)] = int(
+                len(cells)
+            )
 
-    for resolution, cells in levels.items():
-        result[float(resolution)] = int(
-            len(cells)
+        return dict(
+            sorted(result.items())
         )
 
-    return dict(
-        sorted(result.items())
+    resolutions = getattr(
+        leaf_map,
+        "resolutions",
+        None,
     )
+
+    if resolutions is None:
+        return {}
+
+    resolution_array = np.asarray(
+        resolutions
+    )
+
+    if resolution_array.size == 0:
+        return {}
+
+    unique_resolutions, counts = np.unique(
+        resolution_array.astype(
+            np.float64,
+            copy=False,
+        ),
+        return_counts=True,
+    )
+
+    return {
+        float(resolution): int(count)
+        for resolution, count in zip(
+            unique_resolutions,
+            counts,
+        )
+    }
 
 
 def _extract_dominant_reason_counts(
@@ -302,11 +386,17 @@ def build_dashboard_frame(
     if config is None:
         config = DashboardConfig()
 
-    points = _validate_xyz(xyz)
+    points = _validate_xyz(
+        xyz
+    )
 
-    timestamp_value = float(timestamp)
+    timestamp_value = float(
+        timestamp
+    )
 
-    if not np.isfinite(timestamp_value):
+    if not np.isfinite(
+        timestamp_value
+    ):
         raise ValueError(
             "timestamp must be finite"
         )
@@ -321,7 +411,9 @@ def build_dashboard_frame(
         )
 
     safety_mode = _validate_safety_mode(
-        str(safety_assessment.mode)
+        str(
+            safety_assessment.mode
+        )
     )
 
     reasons = tuple(
@@ -343,7 +435,8 @@ def build_dashboard_frame(
     )
 
     invalid_point_count = (
-        point_count - valid_point_count
+        point_count
+        - valid_point_count
     )
 
     semantic_available = bool(
