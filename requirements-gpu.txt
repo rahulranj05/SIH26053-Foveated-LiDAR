@@ -1,0 +1,8 @@
+# GPU training environment (Python 3.10, CUDA 11.8).
+# Install torch from the cu118 index FIRST:
+#   pip install torch==2.0.1 --index-url https://download.pytorch.org/whl/cu118
+# Then install this file.
+# TorchSparse is NOT here on purpose — install it from the saved wheel:
+#   /content/drive/MyDrive/SIH26053/toolchain/torchsparse_t4_torch201_cu118/torchsparse-2.0.0b0-cp310-cp310-linux_x86_64.whl
+numpy==1.26.4
+PyYAML==6.0.1

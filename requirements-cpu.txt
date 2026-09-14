@@ -1,0 +1,4 @@
+# Statistics / data tools only. NO torch, NO GPU packages.
+# Use this in a plain CPU runtime.
+numpy==1.26.4
+PyYAML==6.0.1
