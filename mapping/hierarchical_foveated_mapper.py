@@ -284,34 +284,53 @@ def _validate_inputs(
             "desired_resolution contains non-finite values."
         )
 
-    desired_levels = np.empty(
-        n_points,
-        dtype=np.int8,
-    )
-    matched = np.zeros(
-        n_points,
-        dtype=bool,
+    # ------------------------------------------------------------------
+    # Vectorized resolution -> hierarchy-level conversion.
+    #
+    # Production foveation produces only the supported hierarchy
+    # resolutions. Matching the complete array in NumPy avoids doing
+    # Python-level resolution checks once per LiDAR point.
+    # ------------------------------------------------------------------
+
+    known_resolutions = np.asarray(
+        tuple(LEVEL_RESOLUTIONS.values()),
+        dtype=np.float64,
     )
 
-    for level, known_resolution in LEVEL_RESOLUTIONS.items():
-        match = np.isclose(
-            resolutions,
-            known_resolution,
-            rtol=1e-9,
-            atol=1e-12,
-        )
-        desired_levels[match] = level
-        matched |= match
+    known_levels = np.asarray(
+        tuple(LEVEL_RESOLUTIONS.keys()),
+        dtype=np.int8,
+    )
+
+    matches = np.isclose(
+        resolutions[:, None],
+        known_resolutions[None, :],
+        rtol=1e-9,
+        atol=1e-12,
+    )
+
+    matched = np.any(
+        matches,
+        axis=1,
+    )
 
     if not np.all(matched):
         invalid_resolution = float(
             resolutions[np.flatnonzero(~matched)[0]]
         )
+
         raise ValueError(
             "Unsupported resolution "
             f"{invalid_resolution!r}. Expected one of "
             f"{tuple(LEVEL_RESOLUTIONS.values())}."
         )
+
+    desired_levels = known_levels[
+        np.argmax(
+            matches,
+            axis=1,
+        )
+    ]
 
     reasons = np.asarray(
         dominant_reason,
