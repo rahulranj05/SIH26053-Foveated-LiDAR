@@ -288,12 +288,29 @@ def _validate_inputs(
         n_points,
         dtype=np.int8,
     )
+    matched = np.zeros(
+        n_points,
+        dtype=bool,
+    )
 
-    for index, resolution in enumerate(
-        resolutions
-    ):
-        desired_levels[index] = level_from_resolution(
-            float(resolution)
+    for level, known_resolution in LEVEL_RESOLUTIONS.items():
+        match = np.isclose(
+            resolutions,
+            known_resolution,
+            rtol=1e-9,
+            atol=1e-12,
+        )
+        desired_levels[match] = level
+        matched |= match
+
+    if not np.all(matched):
+        invalid_resolution = float(
+            resolutions[np.flatnonzero(~matched)[0]]
+        )
+        raise ValueError(
+            "Unsupported resolution "
+            f"{invalid_resolution!r}. Expected one of "
+            f"{tuple(LEVEL_RESOLUTIONS.values())}."
         )
 
     reasons = np.asarray(
