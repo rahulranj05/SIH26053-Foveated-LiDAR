@@ -40,13 +40,19 @@ EXPECTED_TRAIN_FRAMES = {
 
 
 def count_one_frame(
+    dataset_name: str,
     dataset,
     index: int,
 ) -> np.ndarray:
     """
-    Read only the semantic label file for one frame.
+    Count unified semantic labels for one frame.
 
-    Point-cloud geometry is NOT loaded.
+    For RELLIS-3D, point-cloud geometry must also be loaded because the
+    raw scans contain systematic invalid placeholder returns at [0, 0, 0].
+    Labels attached to those invalid points must not contribute to class
+    frequencies or class weights.
+
+    Other datasets retain the fast label-only counting path.
     """
 
     sample = dataset.samples[index]
@@ -89,6 +95,51 @@ def count_one_frame(
             native_labels
         )
     )
+
+    # --------------------------------------------------------
+    # RELLIS invalid-return filtering
+    # --------------------------------------------------------
+
+    if dataset_name == "RELLIS-3D":
+
+        if not hasattr(
+            dataset,
+            "_load_scan",
+        ):
+            raise RuntimeError(
+                "RELLIS dataset does not expose _load_scan()."
+            )
+
+        scan_path = Path(
+            sample["scan_path"]
+        )
+
+        scan = dataset._load_scan(
+            scan_path
+        )
+
+        if len(scan) != len(semantic_labels):
+            raise ValueError(
+                "RELLIS point/label mismatch while computing "
+                f"class distribution: {sample['frame_id']} | "
+                f"{len(scan)} points != "
+                f"{len(semantic_labels)} labels"
+            )
+
+        xyz = scan[:, :3]
+
+        ranges = np.linalg.norm(
+            xyz,
+            axis=1,
+        )
+
+        valid_geometry = (
+            ranges > 1e-6
+        )
+
+        semantic_labels = semantic_labels[
+            valid_geometry
+        ]
 
     semantic_labels = np.asarray(
         semantic_labels,
@@ -151,6 +202,7 @@ def count_dataset_parallel(
 
             future = executor.submit(
                 count_one_frame,
+                dataset_name,
                 dataset,
                 index,
             )

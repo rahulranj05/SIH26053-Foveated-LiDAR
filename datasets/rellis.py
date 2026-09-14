@@ -41,10 +41,25 @@ class RELLISDataset:
         mapping_file="datasets/mappings/rellis.yaml",
         sequences: Optional[Sequence[str]] = None,
         strict_labels: bool = True,
+        filter_invalid_geometry: bool = True,
+        minimum_valid_range: float = 1e-6,
     ):
         self.root = Path(root)
         self.mapping_file = Path(mapping_file)
         self.strict_labels = strict_labels
+
+        self.filter_invalid_geometry = bool(
+            filter_invalid_geometry
+        )
+
+        self.minimum_valid_range = float(
+            minimum_valid_range
+        )
+
+        if self.minimum_valid_range < 0:
+            raise ValueError(
+                "minimum_valid_range must be >= 0"
+            )
 
         if not self.root.exists():
             raise FileNotFoundError(
@@ -397,18 +412,55 @@ class RELLISDataset:
                 f"Labels: {len(native_labels)}"
             )
 
+        xyz = scan[:, :3].astype(
+            np.float32,
+            copy=False,
+        )
+
+        intensity = scan[:, 3].astype(
+            np.float32,
+            copy=False,
+        )
+
+        semantic_labels = self._remap_labels(
+            native_labels
+        )
+
+        raw_point_count = len(xyz)
+
+        if self.filter_invalid_geometry:
+
+            ranges = np.linalg.norm(
+                xyz,
+                axis=1,
+            )
+
+            valid_geometry = (
+                ranges
+                > self.minimum_valid_range
+            )
+
+            xyz = xyz[valid_geometry]
+            intensity = intensity[valid_geometry]
+            native_labels = native_labels[
+                valid_geometry
+            ]
+            semantic_labels = semantic_labels[
+                valid_geometry
+            ]
+
+        filtered_point_count = len(xyz)
+
         return {
-            "xyz": scan[:, :3].astype(
-                np.float32,
-                copy=False,
-            ),
-            "intensity": scan[:, 3].astype(
-                np.float32,
-                copy=False,
-            ),
+            "xyz": xyz,
+            "intensity": intensity,
             "native_label": native_labels,
-            "semantic_label": self._remap_labels(
-                native_labels
+            "semantic_label": semantic_labels,
+            "raw_point_count": raw_point_count,
+            "filtered_point_count": filtered_point_count,
+            "removed_invalid_points": (
+                raw_point_count
+                - filtered_point_count
             ),
             "dataset": "rellis_3d",
             "sequence": sample["sequence"],

@@ -234,11 +234,55 @@ class F0TarDataset(Dataset):
 
         semantic = self._remap(dataset_name, native)
 
+        xyz = scan[:, :3].astype(
+            np.float32,
+            copy=False,
+        )
+
+        intensity = scan[:, 3].astype(
+            np.float32,
+            copy=False,
+        )
+
+        raw_point_count = len(xyz)
+
+        # -------------------------------------------------------------
+        # RELLIS invalid-return filtering
+        #
+        # RELLIS scans contain a large number of placeholder points at
+        # the LiDAR origin [0, 0, 0]. These are not physical returns and
+        # must not enter training, statistics, voxelization or metrics.
+        #
+        # Keep the TAR cache lossless; filter only after decoding.
+        # -------------------------------------------------------------
+
+        if dataset_name == "rellis_3d":
+
+            ranges = np.linalg.norm(
+                xyz,
+                axis=1,
+            )
+
+            valid_geometry = ranges > 1e-6
+
+            xyz = xyz[valid_geometry]
+            intensity = intensity[valid_geometry]
+            native = native[valid_geometry]
+            semantic = semantic[valid_geometry]
+
+        filtered_point_count = len(xyz)
+
         return {
-            "xyz": scan[:, :3].astype(np.float32, copy=False),
-            "intensity": scan[:, 3].astype(np.float32, copy=False),
+            "xyz": xyz,
+            "intensity": intensity,
             "semantic_label": semantic,
             "native_label": native,
+            "raw_point_count": raw_point_count,
+            "filtered_point_count": filtered_point_count,
+            "removed_invalid_points": (
+                raw_point_count
+                - filtered_point_count
+            ),
             "dataset": dataset_name,
             "split": row.get("split"),
             "frame_id": row.get("identity"),

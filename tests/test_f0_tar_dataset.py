@@ -38,8 +38,21 @@ def _build_fixture(root: Path):
     examples = [
         ("semantic_kitti", np.array([[1,2,3,0.5],[4,5,6,0.7]], np.float32),
          np.array([10,1], np.uint32)),
-        ("rellis_3d", np.array([[1,2,3,0.5],[4,5,6,0.7]], np.float32),
-         np.array([1,0], np.uint32)),
+        (
+            "rellis_3d",
+            np.array(
+                [
+                    [0, 0, 0, 0.1],
+                    [1, 2, 3, 0.5],
+                    [4, 5, 6, 0.7],
+                ],
+                np.float32,
+            ),
+            np.array(
+                [1, 1, 0],
+                np.uint32,
+            ),
+        ),
         ("semantic_stf", np.array([[1,2,3,0.5,9],[4,5,6,0.7,8]], np.float32),
          np.array([1,0], np.uint32)),
         ("nuscenes_mini", np.array([[1,2,3,0.5,9],[4,5,6,0.7,8]], np.float32),
@@ -95,6 +108,19 @@ def main():
         assert ds[0]["xyz"].shape == (2, 3)
         assert ds[0]["semantic_label"].tolist() == [16, 1]
         assert ds[1]["semantic_label"].tolist() == [1, 0]
+
+        assert ds[1]["raw_point_count"] == 3
+        assert ds[1]["filtered_point_count"] == 2
+        assert ds[1]["removed_invalid_points"] == 1
+
+        assert ds[1]["xyz"].shape == (2, 3)
+
+        assert not np.any(
+            np.all(
+                ds[1]["xyz"] == 0.0,
+                axis=1,
+            )
+        )
         assert ds[2]["intensity"].tolist() == np.array([0.5, 0.7], np.float32).tolist()
         assert ds[3]["semantic_label"].tolist() == [1, 0]
 
