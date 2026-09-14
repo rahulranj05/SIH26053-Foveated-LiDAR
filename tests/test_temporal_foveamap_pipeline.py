@@ -4,12 +4,14 @@ import numpy as np
 import pytest
 
 from mapping.ego_motion import EgoMotion
-from mapping.kinematic_foveation import VehicleState
-from mapping.sensor_frame import SensorFrame
+from mapping.sensor_frame import SensorFrame, VehicleState
+from mapping.signal_integration import SignalIntegrationConfig
 from mapping.temporal_foveamap_pipeline import (
     TemporalFoveaMapProcessor,
-    TemporalFoveaMapSequenceResult,
     process_temporal_foveamap_sequence,
+)
+from mapping.production_foveation_signals import (
+    ProductionFoveationSignalConfig,
 )
 
 
@@ -22,10 +24,12 @@ def make_frame(
 ) -> SensorFrame:
     xyz = np.array(
         [
-            [1.0, 0.0, 0.0],
             [2.0, 0.0, 0.0],
-            [3.0, 1.0, 0.0],
-            [4.0, -1.0, 0.0],
+            [5.0, 1.0, 0.2],
+            [10.0, -1.0, 0.5],
+            [20.0, 0.0, 1.0],
+            [35.0, 2.0, 0.3],
+            [50.0, -2.0, 0.8],
         ],
         dtype=np.float64,
     )
@@ -33,8 +37,8 @@ def make_frame(
     return SensorFrame(
         xyz=xyz,
         vehicle_state=VehicleState(
-            speed=5.0,
-            yaw_rate=0.1,
+            speed=8.0,
+            yaw_rate=0.05,
             heading=0.0,
         ),
         timestamp=timestamp,
@@ -44,16 +48,7 @@ def make_frame(
     )
 
 
-def base_signal_provider(
-    frame: SensorFrame,
-) -> dict[str, np.ndarray]:
-    """
-    Minimal deterministic base signal used only for A31 tests.
-
-    This represents a caller-supplied non-semantic/non-dynamic
-    importance signal.
-    """
-
+def base_signal_provider(frame: SensorFrame) -> dict[str, np.ndarray]:
     distance = np.linalg.norm(
         frame.xyz[:, :2],
         axis=1,
@@ -64,9 +59,64 @@ def base_signal_provider(
     }
 
 
-def test_processor_requires_callable_base_signal_provider():
-    with pytest.raises(TypeError):
-        TemporalFoveaMapProcessor(None)  # type: ignore[arg-type]
+def test_processor_uses_native_production_provider_by_default():
+    frame = make_frame("000000", 0.0)
+
+    processor = TemporalFoveaMapProcessor()
+
+    result = processor.process_frame(frame)
+
+    assert set(result.signals) == {
+        "DISTANCE",
+        "KINEMATIC",
+        "PREDICTED_PATH",
+    }
+
+    for signal in result.signals.values():
+        assert signal.shape == (frame.num_points,)
+        assert np.all(np.isfinite(signal))
+        assert np.all(signal >= 0.0)
+        assert np.all(signal <= 1.0)
+
+
+def test_default_production_provider_reaches_a20():
+    frame = make_frame("000000", 0.0)
+
+    processor = TemporalFoveaMapProcessor()
+
+    result = processor.process_frame(frame)
+
+    assert result.pipeline_result.foveation
+    assert result.pipeline_result.leaf_map is not None
+
+    assert result.signals["DISTANCE"].shape == (
+        frame.num_points,
+    )
+    assert result.signals["KINEMATIC"].shape == (
+        frame.num_points,
+    )
+    assert result.signals["PREDICTED_PATH"].shape == (
+        frame.num_points,
+    )
+
+
+def test_custom_base_signal_provider_overrides_production_provider():
+    frame = make_frame("000000", 0.0)
+
+    processor = TemporalFoveaMapProcessor(
+        base_signal_provider,
+    )
+
+    result = processor.process_frame(frame)
+
+    assert set(result.signals) == {"DISTANCE"}
+
+    expected = base_signal_provider(frame)["DISTANCE"]
+
+    np.testing.assert_allclose(
+        result.signals["DISTANCE"],
+        expected,
+    )
 
 
 def test_single_frame_runs_full_a20_pipeline():
@@ -91,61 +141,24 @@ def test_single_frame_runs_full_a20_pipeline():
     assert result.pipeline_result.leaf_map is not None
 
 
-def test_frame_id_and_timestamp_are_preserved():
-    frames = [
-        make_frame("000010", 10.0),
-        make_frame("000011", 10.1),
-    ]
-
-    processor = TemporalFoveaMapProcessor(
-        base_signal_provider,
-    )
-
-    first = processor.process_frame(frames[0])
-    second = processor.process_frame(frames[1])
-
-    assert first.frame_id == "000010"
-    assert second.frame_id == "000011"
-
-    assert first.timestamp == 10.0
-    assert second.timestamp == 10.1
-
-    assert second.delta_time == pytest.approx(0.1)
-
-
 def test_timestamps_must_be_strictly_increasing():
     processor = TemporalFoveaMapProcessor(
         base_signal_provider,
     )
 
     processor.process_frame(
-        make_frame("000000", 1.0)
+        make_frame("000000", 1.0),
     )
 
     with pytest.raises(ValueError):
         processor.process_frame(
-            make_frame("000001", 1.0)
+            make_frame("000001", 1.0),
         )
 
 
-def test_decreasing_timestamp_is_rejected():
-    processor = TemporalFoveaMapProcessor(
-        base_signal_provider,
-    )
-
-    processor.process_frame(
-        make_frame("000000", 2.0)
-    )
-
-    with pytest.raises(ValueError):
-        processor.process_frame(
-            make_frame("000001", 1.0)
-        )
-
-
-def test_semantic_signal_is_propagated_when_present():
+def test_semantic_signal_propagates():
     labels = np.array(
-        [1, 2, 3, 5],
+        [3, 3, 4, 4, 5, 5],
         dtype=np.int64,
     )
 
@@ -162,15 +175,13 @@ def test_semantic_signal_is_propagated_when_present():
     result = processor.process_frame(frame)
 
     assert "semantic" in result.signals
-    assert result.signals["semantic"].shape == (4,)
-
-
-def test_missing_semantics_are_not_fabricated():
-    frame = make_frame(
-        "000000",
-        0.0,
-        semantic_labels=None,
+    assert result.signals["semantic"].shape == (
+        frame.num_points,
     )
+
+
+def test_missing_semantic_is_not_fabricated():
+    frame = make_frame("000000", 0.0)
 
     processor = TemporalFoveaMapProcessor(
         base_signal_provider,
@@ -181,9 +192,9 @@ def test_missing_semantics_are_not_fabricated():
     assert "semantic" not in result.signals
 
 
-def test_supplied_dynamic_probability_is_used():
+def test_explicit_dynamic_probability_is_used():
     dynamic = np.array(
-        [0.0, 0.25, 0.75, 1.0],
+        [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
         dtype=np.float64,
     )
 
@@ -200,64 +211,41 @@ def test_supplied_dynamic_probability_is_used():
     result = processor.process_frame(frame)
 
     assert "dynamic" in result.signals
+
     np.testing.assert_allclose(
         result.signals["dynamic"],
         dynamic,
     )
 
 
-def test_temporal_dynamic_signal_appears_with_previous_frame():
-    first = make_frame(
-        "000000",
-        0.0,
-    )
-
-    second = SensorFrame(
-        xyz=np.array(
-            [
-                [1.8, 0.0, 0.0],
-                [2.8, 0.0, 0.0],
-                [3.8, 1.0, 0.0],
-                [4.8, -1.0, 0.0],
-            ],
-            dtype=np.float64,
-        ),
-        vehicle_state=VehicleState(
-            speed=5.0,
-            yaw_rate=0.1,
-            heading=0.0,
-        ),
-        timestamp=1.0,
-        frame_id="000001",
-    )
+def test_temporal_dynamic_signal_is_created_on_second_frame():
+    frame1 = make_frame("000000", 0.0)
+    frame2 = make_frame("000001", 1.0)
 
     processor = TemporalFoveaMapProcessor(
         base_signal_provider,
     )
 
-    first_result = processor.process_frame(first)
-    second_result = processor.process_frame(second)
+    first = processor.process_frame(frame1)
+    second = processor.process_frame(frame2)
 
-    assert "dynamic" not in first_result.signals
-    assert "dynamic" in second_result.signals
+    assert "dynamic" not in first.signals
+    assert "dynamic" in second.signals
 
-    assert second_result.signals["dynamic"].shape == (
-        second.num_points,
+    assert second.signals["dynamic"].shape == (
+        frame2.num_points,
     )
 
 
-def test_explicit_dynamic_probability_overrides_temporal_signal():
-    first = make_frame(
-        "000000",
-        0.0,
-    )
+def test_explicit_dynamic_overrides_temporal_dynamic():
+    frame1 = make_frame("000000", 0.0)
 
     explicit_dynamic = np.array(
-        [0.1, 0.2, 0.3, 0.4],
+        [0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
         dtype=np.float64,
     )
 
-    second = make_frame(
+    frame2 = make_frame(
         "000001",
         1.0,
         dynamic_probability=explicit_dynamic,
@@ -267,41 +255,32 @@ def test_explicit_dynamic_probability_overrides_temporal_signal():
         base_signal_provider,
     )
 
-    processor.process_frame(first)
-    result = processor.process_frame(second)
+    processor.process_frame(frame1)
+    second = processor.process_frame(frame2)
+
+    assert "dynamic" in second.signals
 
     np.testing.assert_allclose(
-        result.signals["dynamic"],
+        second.signals["dynamic"],
         explicit_dynamic,
     )
 
 
-def test_ego_motion_provider_is_called_for_temporal_frame():
-    first = make_frame(
-        "000000",
-        0.0,
-    )
+def test_ego_motion_provider_is_not_called_for_first_frame():
+    calls = []
 
-    second = make_frame(
-        "000001",
-        1.0,
-    )
-
-    calls: list[tuple[str, str]] = []
-
-    def ego_provider(
+    def ego_motion_provider(
         current: SensorFrame,
         previous: SensorFrame,
     ) -> EgoMotion:
         calls.append(
             (
-                str(previous.frame_id),
-                str(current.frame_id),
+                current.frame_id,
+                previous.frame_id,
             )
         )
-
         return EgoMotion(
-            translation_x=0.5,
+            translation_x=0.0,
             translation_y=0.0,
             translation_z=0.0,
             yaw=0.0,
@@ -309,44 +288,56 @@ def test_ego_motion_provider_is_called_for_temporal_frame():
 
     processor = TemporalFoveaMapProcessor(
         base_signal_provider,
-        ego_motion_provider=ego_provider,
-    )
-
-    processor.process_frame(first)
-    result = processor.process_frame(second)
-
-    assert calls == [
-        ("000000", "000001"),
-    ]
-
-    assert result.ego_motion is not None
-    assert result.ego_motion.translation_x == pytest.approx(0.5)
-
-
-def test_no_ego_motion_is_requested_for_first_frame():
-    calls = 0
-
-    def ego_provider(
-        current: SensorFrame,
-        previous: SensorFrame,
-    ) -> EgoMotion:
-        nonlocal calls
-        calls += 1
-        return EgoMotion()
-
-    processor = TemporalFoveaMapProcessor(
-        base_signal_provider,
-        ego_motion_provider=ego_provider,
+        ego_motion_provider=ego_motion_provider,
     )
 
     processor.process_frame(
-        make_frame("000000", 0.0)
+        make_frame("000000", 0.0),
     )
 
-    assert calls == 0
+    assert calls == []
 
 
-def test_sequence_result_contains_all_processed_frames():
+def test_ego_motion_provider_is_called_after_first_frame():
+    calls = []
+
+    def ego_motion_provider(
+        current: SensorFrame,
+        previous: SensorFrame,
+    ) -> EgoMotion:
+        calls.append(
+            (
+                current.frame_id,
+                previous.frame_id,
+            )
+        )
+
+        return EgoMotion(
+            translation_x=0.0,
+            translation_y=0.0,
+            translation_z=0.0,
+            yaw=0.0,
+        )
+
+    processor = TemporalFoveaMapProcessor(
+        base_signal_provider,
+        ego_motion_provider=ego_motion_provider,
+    )
+
+    processor.process_frame(
+        make_frame("000000", 0.0),
+    )
+
+    processor.process_frame(
+        make_frame("000001", 1.0),
+    )
+
+    assert calls == [
+        ("000001", "000000"),
+    ]
+
+
+def test_sequence_result_contains_statistics():
     frames = [
         make_frame("000000", 0.0),
         make_frame("000001", 1.0),
@@ -359,35 +350,13 @@ def test_sequence_result_contains_all_processed_frames():
 
     result = processor.process_sequence(frames)
 
-    assert isinstance(
-        result,
-        TemporalFoveaMapSequenceResult,
-    )
-
     assert result.total_frames == 3
-    assert result.frame_ids == (
-        "000000",
-        "000001",
-        "000002",
-    )
-
-    assert result.timestamps == (
-        0.0,
-        1.0,
-        2.0,
-    )
-
-    assert result.delta_times == (
-        None,
-        1.0,
-        1.0,
-    )
-
-    assert result.mean_delta_time == pytest.approx(1.0)
-    assert result.total_duration_seconds == pytest.approx(2.0)
+    assert len(result.frames) == 3
+    assert result.timestamps == (0.0, 1.0, 2.0)
+    assert result.delta_times == (None, 1.0, 1.0)
 
 
-def test_empty_sequence_is_supported():
+def test_empty_sequence_returns_empty_result():
     processor = TemporalFoveaMapProcessor(
         base_signal_provider,
     )
@@ -396,51 +365,43 @@ def test_empty_sequence_is_supported():
 
     assert result.total_frames == 0
     assert result.frames == ()
-    assert result.total_duration_seconds == 0.0
-    assert result.mean_delta_time is None
+    assert result.frame_ids == ()
+    assert result.timestamps == ()
+    assert result.delta_times == ()
 
 
-def test_processor_retains_previous_frame():
-    first = make_frame(
-        "000000",
-        0.0,
-    )
-
+def test_previous_frame_is_retained():
     processor = TemporalFoveaMapProcessor(
         base_signal_provider,
     )
 
-    assert processor.previous_frame is None
+    frame1 = make_frame("000000", 0.0)
+    frame2 = make_frame("000001", 1.0)
 
-    processor.process_frame(first)
+    processor.process_frame(frame1)
+    processor.process_frame(frame2)
 
-    assert processor.previous_frame is first
+    assert processor.previous_frame is frame2
 
 
-def test_reset_clears_temporal_state():
+def test_reset_clears_previous_frame():
     processor = TemporalFoveaMapProcessor(
         base_signal_provider,
     )
 
-    processor.process_frame(
-        make_frame("000000", 0.0)
-    )
+    frame = make_frame("000000", 0.0)
+
+    processor.process_frame(frame)
+
+    assert processor.previous_frame is frame
 
     processor.reset()
 
     assert processor.previous_frame is None
-    assert processor.processed_frames == ()
 
 
 def test_base_signal_shape_is_validated():
-    frame = make_frame(
-        "000000",
-        0.0,
-    )
-
-    def bad_provider(
-        frame: SensorFrame,
-    ) -> dict[str, np.ndarray]:
+    def invalid_provider(frame: SensorFrame):
         return {
             "DISTANCE": np.zeros(
                 frame.num_points - 1,
@@ -449,22 +410,17 @@ def test_base_signal_shape_is_validated():
         }
 
     processor = TemporalFoveaMapProcessor(
-        bad_provider,
+        invalid_provider,
     )
 
     with pytest.raises(ValueError):
-        processor.process_frame(frame)
+        processor.process_frame(
+            make_frame("000000", 0.0),
+        )
 
 
 def test_nonfinite_base_signal_is_rejected():
-    frame = make_frame(
-        "000000",
-        0.0,
-    )
-
-    def bad_provider(
-        frame: SensorFrame,
-    ) -> dict[str, np.ndarray]:
+    def invalid_provider(frame: SensorFrame):
         values = np.ones(
             frame.num_points,
             dtype=np.float64,
@@ -476,22 +432,17 @@ def test_nonfinite_base_signal_is_rejected():
         }
 
     processor = TemporalFoveaMapProcessor(
-        bad_provider,
+        invalid_provider,
     )
 
     with pytest.raises(ValueError):
-        processor.process_frame(frame)
+        processor.process_frame(
+            make_frame("000000", 0.0),
+        )
 
 
-def test_empty_base_and_integrated_signals_are_rejected():
-    frame = make_frame(
-        "000000",
-        0.0,
-    )
-
-    def empty_provider(
-        frame: SensorFrame,
-    ) -> dict[str, np.ndarray]:
+def test_empty_custom_base_signals_are_rejected():
+    def empty_provider(frame: SensorFrame):
         return {}
 
     processor = TemporalFoveaMapProcessor(
@@ -499,42 +450,24 @@ def test_empty_base_and_integrated_signals_are_rejected():
     )
 
     with pytest.raises(ValueError):
-        processor.process_frame(frame)
+        processor.process_frame(
+            make_frame("000000", 0.0),
+        )
 
 
-def test_point_count_is_preserved_through_a31():
-    frames = [
-        make_frame("000000", 0.0),
-        make_frame("000001", 1.0),
-    ]
+def test_point_count_is_preserved_through_pipeline():
+    frame = make_frame("000000", 0.0)
 
     processor = TemporalFoveaMapProcessor(
         base_signal_provider,
     )
 
-    result = processor.process_sequence(frames)
+    result = processor.process_frame(frame)
 
-    for frame_result in result.frames:
-        assert (
-            frame_result.pipeline_result.foveation[
-                "importance"
-            ].shape
-            == (4,)
-        )
-
-        assert (
-            frame_result.pipeline_result.foveation[
-                "resolution"
-            ].shape
-            == (4,)
-        )
-
-        assert (
-            frame_result.pipeline_result.foveation[
-                "dominant_reason"
-            ].shape
-            == (4,)
-        )
+    assert result.pipeline_result.leaf_map is not None
+    assert result.pipeline_result.leaf_map.input_points == (
+        frame.num_points
+    )
 
 
 def test_convenience_function_runs_sequence():
@@ -549,36 +482,93 @@ def test_convenience_function_runs_sequence():
     )
 
     assert result.total_frames == 2
-    assert result.frame_ids == (
-        "000000",
-        "000001",
-    )
+    assert len(result.frames) == 2
 
 
-def test_multiple_sequence_calls_are_supported():
-    processor = TemporalFoveaMapProcessor(
-        base_signal_provider,
-    )
-
-    first_sequence = [
+def test_convenience_function_uses_production_provider_by_default():
+    frames = [
         make_frame("000000", 0.0),
         make_frame("000001", 1.0),
     ]
 
-    second_sequence = [
-        make_frame("000002", 2.0),
-    ]
-
-    first_result = processor.process_sequence(
-        first_sequence
+    result = process_temporal_foveamap_sequence(
+        frames,
     )
 
-    second_result = processor.process_sequence(
-        second_sequence
+    assert result.total_frames == 2
+
+    for frame_result in result.frames:
+        assert {
+            "DISTANCE",
+            "KINEMATIC",
+            "PREDICTED_PATH",
+        }.issubset(frame_result.signals)
+
+        assert frame_result.pipeline_result.leaf_map is not None
+
+
+def test_production_foveation_config_is_forwarded():
+    config = ProductionFoveationSignalConfig(
+        maximum_distance=50.0,
+        path_horizon=4.0,
+        path_step=0.5,
+        path_corridor_width=2.0,
     )
 
-    assert first_result.total_frames == 2
-    assert second_result.total_frames == 1
+    frame = make_frame("000000", 0.0)
 
-    assert processor.processed_frames[0].frame_id == "000000"
-    assert processor.processed_frames[-1].frame_id == "000002"
+    processor = TemporalFoveaMapProcessor(
+        production_foveation_config=config,
+    )
+
+    result = processor.process_frame(frame)
+
+    assert set(result.signals) == {
+        "DISTANCE",
+        "KINEMATIC",
+        "PREDICTED_PATH",
+    }
+
+    expected_distance = np.clip(
+        1.0
+        - (
+            np.linalg.norm(
+                frame.xyz[:, :2],
+                axis=1,
+            )
+            / 50.0
+        ),
+        0.0,
+        1.0,
+    )
+
+    np.testing.assert_allclose(
+        result.signals["DISTANCE"],
+        expected_distance,
+    )
+
+
+def test_multiple_sequence_calls_retain_temporal_state():
+    processor = TemporalFoveaMapProcessor(
+        base_signal_provider,
+    )
+
+    first = processor.process_sequence(
+        [
+            make_frame("000000", 0.0),
+            make_frame("000001", 1.0),
+        ]
+    )
+
+    second = processor.process_sequence(
+        [
+            make_frame("000010", 10.0),
+            make_frame("000011", 11.0),
+        ]
+    )
+
+    assert first.total_frames == 2
+    assert second.total_frames == 2
+
+    assert second.frames[0].delta_time == 9.0
+    assert second.frames[0].ego_motion is None

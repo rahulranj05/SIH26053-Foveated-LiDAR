@@ -8,6 +8,13 @@ A31 integrates:
     A21 SensorFrame
         |
         v
+    Production Foveation Signals
+        |
+        +--> DISTANCE
+        +--> KINEMATIC
+        +--> PREDICTED_PATH
+        |
+        v
     A30 Semantic + Dynamic Signal Integration
         |
         v
@@ -25,6 +32,8 @@ A31 owns:
     - previous-frame retention
     - timestamp / delta-time validation
     - optional ego-motion provider execution
+    - production base signal construction
+    - optional caller-supplied base signal override
     - A30 signal integration
     - adaptation of A30 signal names to A17/A18.3 canonical names
     - A20 execution
@@ -34,6 +43,21 @@ A31 owns:
 
 A31 does NOT modify the frozen A20, A17, A18.3, A21, A25, A26,
 A29, or A30 implementations.
+
+Production signal ownership
+----------------------------
+When no base_signal_provider is supplied, A31 constructs the production
+foveation signals directly from the canonical SensorFrame:
+
+    DISTANCE
+    KINEMATIC
+    PREDICTED_PATH
+
+The production signal builder does not fuse signals or choose a
+resolution. Those responsibilities remain with A17.
+
+A caller-supplied base_signal_provider remains supported for tests,
+experiments, ablations, and custom signal sources.
 """
 
 from __future__ import annotations
@@ -47,6 +71,10 @@ from mapping.ego_motion import EgoMotion
 from mapping.foveamap_pipeline import (
     FoveaMapPipelineResult,
     run_foveamap_pipeline,
+)
+from mapping.production_foveation_signals import (
+    ProductionFoveationSignalConfig,
+    build_production_foveation_signals,
 )
 from mapping.sensor_frame import SensorFrame
 from mapping.signal_integration import (
@@ -99,14 +127,17 @@ class TemporalFoveaMapFrameResult:
     signals:
         Complete signal dictionary used by A31.
 
-        A31 intentionally exposes the A30 naming convention here:
+        A31 exposes canonical production signals as:
 
             DISTANCE / KINEMATIC / PREDICTED_PATH
+
+        A30 semantic/dynamic signals remain:
+
             semantic
             dynamic
 
-        Internally, semantic and dynamic are adapted to the canonical
-        uppercase A17/A18.3 reason names before entering A20.
+        Internally, all signals are adapted to the canonical uppercase
+        A17/A18.3 reason names before entering A20.
 
     pipeline_result:
         Exact FoveaMapPipelineResult returned by A20.
@@ -171,13 +202,32 @@ class TemporalFoveaMapSequenceResult:
 
 
 def _validate_base_signal_provider(
-    provider: BaseSignalProvider,
+    provider: BaseSignalProvider | None,
 ) -> None:
-    """Validate the required caller-supplied base signal provider."""
+    """
+    Validate an optional caller-supplied base signal provider.
 
-    if not callable(provider):
+    None is valid because A31 now has a native production signal builder.
+    """
+
+    if provider is not None and not callable(provider):
         raise TypeError(
-            "base_signal_provider must be callable"
+            "base_signal_provider must be callable or None"
+        )
+
+
+def _validate_production_signal_config(
+    config: ProductionFoveationSignalConfig | None,
+) -> None:
+    """Validate the optional production foveation configuration."""
+
+    if config is not None and not isinstance(
+        config,
+        ProductionFoveationSignalConfig,
+    ):
+        raise TypeError(
+            "production_foveation_config must be a "
+            "ProductionFoveationSignalConfig or None"
         )
 
 
@@ -197,11 +247,10 @@ def _validate_base_signals(
     num_points: int,
 ) -> dict[str, np.ndarray]:
     """
-    Validate caller-supplied base importance signals.
+    Validate per-point importance signals.
 
-    Base signals are required because A20 requires at least one
-    importance signal. A31 does not fabricate a distance signal or
-    any other signal on behalf of the caller.
+    A31 accepts either production signals or caller-supplied signals.
+    Every signal must contain one normalized importance value per point.
     """
 
     if not isinstance(signals, dict):
@@ -343,8 +392,21 @@ class TemporalFoveaMapProcessor:
     Parameters
     ----------
     base_signal_provider:
-        Required callable producing caller-supplied per-point importance
+        Optional callable producing caller-supplied per-point importance
         signals for every SensorFrame.
+
+        When omitted, A31 uses the native production foveation signal
+        builder and constructs:
+
+            DISTANCE
+            KINEMATIC
+            PREDICTED_PATH
+
+        directly from the SensorFrame.
+
+        A caller-supplied provider overrides the production builder.
+        This preserves support for tests, experiments, ablations, and
+        custom signal sources.
 
     ego_motion_provider:
         Optional callable receiving:
@@ -357,14 +419,21 @@ class TemporalFoveaMapProcessor:
 
     signal_config:
         Optional A30 SignalIntegrationConfig.
+
+    production_foveation_config:
+        Optional configuration for the native production foveation
+        signal builder.
     """
 
     def __init__(
         self,
-        base_signal_provider: BaseSignalProvider,
+        base_signal_provider: BaseSignalProvider | None = None,
         *,
         ego_motion_provider: EgoMotionProvider | None = None,
         signal_config: SignalIntegrationConfig | None = None,
+        production_foveation_config: (
+            ProductionFoveationSignalConfig | None
+        ) = None,
     ) -> None:
 
         _validate_base_signal_provider(
@@ -387,6 +456,10 @@ class TemporalFoveaMapProcessor:
                 "signal_config must be a SignalIntegrationConfig or None"
             )
 
+        _validate_production_signal_config(
+            production_foveation_config
+        )
+
         self._base_signal_provider = (
             base_signal_provider
         )
@@ -399,6 +472,12 @@ class TemporalFoveaMapProcessor:
             signal_config
             if signal_config is not None
             else SignalIntegrationConfig()
+        )
+
+        self._production_foveation_config = (
+            production_foveation_config
+            if production_foveation_config is not None
+            else ProductionFoveationSignalConfig()
         )
 
         self._previous_frame: SensorFrame | None = None
@@ -428,6 +507,36 @@ class TemporalFoveaMapProcessor:
         )
 
     # ------------------------------------------------------------------------
+    # Signal construction
+    # ------------------------------------------------------------------------
+
+    def _build_base_signals(
+        self,
+        frame: SensorFrame,
+    ) -> dict[str, np.ndarray]:
+        """
+        Build the A31 base foveation signals for one frame.
+
+        A caller-supplied provider takes precedence. Otherwise the
+        native production signal builder is used.
+        """
+
+        if self._base_signal_provider is not None:
+            signals = self._base_signal_provider(
+                frame
+            )
+        else:
+            signals = build_production_foveation_signals(
+                frame,
+                config=self._production_foveation_config,
+            )
+
+        return _validate_base_signals(
+            signals,
+            frame.num_points,
+        )
+
+    # ------------------------------------------------------------------------
     # Single-frame processing
     # ------------------------------------------------------------------------
 
@@ -436,7 +545,7 @@ class TemporalFoveaMapProcessor:
         frame: SensorFrame,
     ) -> TemporalFoveaMapFrameResult:
         """
-        Process one SensorFrame through A30 and A20.
+        Process one SensorFrame through production/A30 signals and A20.
 
         Frames must have strictly increasing timestamps.
         """
@@ -487,16 +596,11 @@ class TemporalFoveaMapProcessor:
                 )
 
         # --------------------------------------------------------------------
-        # Caller-supplied base signals
+        # Production or caller-supplied base signals
         # --------------------------------------------------------------------
 
-        base_signals = self._base_signal_provider(
+        base_signals = self._build_base_signals(
             frame
-        )
-
-        base_signals = _validate_base_signals(
-            base_signals,
-            frame.num_points,
         )
 
         # --------------------------------------------------------------------
@@ -534,8 +638,9 @@ class TemporalFoveaMapProcessor:
                 dtype=np.float64,
             )
 
-        # A20 requires at least one signal. We deliberately do not
-        # fabricate one here.
+        # The native production builder always provides three signals.
+        # A custom provider may intentionally return an empty dictionary;
+        # A20 requires at least one importance signal, so reject it here.
         if not signals:
             raise ValueError(
                 "base and integrated signals must contain at least "
@@ -724,22 +829,28 @@ def _build_sequence_result(
 
 def process_temporal_foveamap_sequence(
     frames: Iterable[SensorFrame],
-    base_signal_provider: BaseSignalProvider,
+    base_signal_provider: BaseSignalProvider | None = None,
     *,
     ego_motion_provider: EgoMotionProvider | None = None,
     signal_config: SignalIntegrationConfig | None = None,
+    production_foveation_config: (
+        ProductionFoveationSignalConfig | None
+    ) = None,
 ) -> TemporalFoveaMapSequenceResult:
     """
     Convenience wrapper for processing a SensorFrame sequence.
 
-    ``base_signal_provider`` is intentionally the second positional
-    argument to preserve the natural A31 calling convention.
+    ``base_signal_provider`` remains the second positional argument for
+    backwards compatibility.
+
+    When omitted, the native production foveation signal builder is used.
     """
 
     processor = TemporalFoveaMapProcessor(
         base_signal_provider,
         ego_motion_provider=ego_motion_provider,
         signal_config=signal_config,
+        production_foveation_config=production_foveation_config,
     )
 
     return processor.process_sequence(
