@@ -521,24 +521,15 @@ def _aggregate_group_arrays(
     np.ndarray,
 ]:
     """
-    Aggregate Z statistics for contiguous sorted groups.
+    Aggregate Z statistics for explicitly bounded contiguous groups.
 
-    Returns:
-
-        z_min,
-        z_max,
-        z_mean,
-        z_variance,
-        point_count
+    The explicit end boundaries are required because callers may pass a
+    selected subset of groups. Using np.add.reduceat() with selected starts
+    would otherwise make each selected group consume points belonging to
+    unselected groups.
     """
 
     group_count = begin.size
-
-    point_count = (
-        end - begin
-    ).astype(
-        np.int64
-    )
 
     if group_count == 0:
         empty = np.empty(
@@ -557,68 +548,104 @@ def _aggregate_group_arrays(
             ),
         )
 
-    z = xyz[
-        sorted_indices,
-        2,
-    ]
+    if begin.size != end.size:
+        raise ValueError(
+            "begin and end must have equal length."
+        )
 
-    z_min = np.minimum.reduceat(
-        z,
-        begin,
+    if np.any(begin < 0) or np.any(end < begin):
+        raise ValueError(
+            "Invalid group boundaries."
+        )
+
+    if np.any(end > sorted_indices.size):
+        raise ValueError(
+            "Group boundary exceeds sorted index array."
+        )
+
+    point_count = (
+        end - begin
+    ).astype(
+        np.int64,
+        copy=False,
     )
 
-    z_max = np.maximum.reduceat(
-        z,
-        begin,
+    if np.any(point_count <= 0):
+        raise ValueError(
+            "Every aggregation group must contain at least one point."
+        )
+
+    z = np.asarray(
+        xyz[
+            sorted_indices,
+            2,
+        ],
+        dtype=np.float64,
     )
 
-    z_sum = np.add.reduceat(
-        z,
-        begin,
+    z_min = np.empty(
+        group_count,
+        dtype=np.float64,
     )
 
-    z_squared_sum = np.add.reduceat(
-        z * z,
-        begin,
+    z_max = np.empty(
+        group_count,
+        dtype=np.float64,
     )
 
-    z_mean = (
-        z_sum
-        / point_count
+    z_mean = np.empty(
+        group_count,
+        dtype=np.float64,
     )
 
-    z_variance = (
-        z_squared_sum
-        / point_count
-        - z_mean * z_mean
+    z_variance = np.empty(
+        group_count,
+        dtype=np.float64,
     )
 
-    # Protect against tiny negative floating-point roundoff.
-    z_variance = np.maximum(
-        z_variance,
-        0.0,
-    )
+    for group_index, (
+        group_begin,
+        group_end,
+    ) in enumerate(
+        zip(
+            begin,
+            end,
+        )
+    ):
+        values = z[
+            group_begin:group_end
+        ]
+
+        z_min[group_index] = np.min(
+            values
+        )
+
+        z_max[group_index] = np.max(
+            values
+        )
+
+        z_mean[group_index] = np.mean(
+            values,
+            dtype=np.float64,
+        )
+
+        z_variance[group_index] = max(
+            float(
+                np.var(
+                    values,
+                    dtype=np.float64,
+                )
+            ),
+            0.0,
+        )
 
     return (
-        z_min.astype(
-            np.float64,
-            copy=False,
-        ),
-        z_max.astype(
-            np.float64,
-            copy=False,
-        ),
-        z_mean.astype(
-            np.float64,
-            copy=False,
-        ),
-        z_variance.astype(
-            np.float64,
-            copy=False,
-        ),
+        z_min,
+        z_max,
+        z_mean,
+        z_variance,
         point_count,
     )
-
 
 def _dominant_reasons(
     reasons: np.ndarray,
