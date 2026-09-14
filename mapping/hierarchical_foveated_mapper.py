@@ -1,34 +1,40 @@
+"""
+A18.3 — Hierarchical Foveated 2.5D Mapper.
+
+This module converts per-point desired resolutions into a compact,
+non-overlapping hierarchical 2.5D leaf map.
+
+Hierarchy:
+
+    level 0 -> 0.05 m
+    level 1 -> 0.10 m
+    level 2 -> 0.20 m
+    level 3 -> 0.40 m
+
+Important invariant:
+
+    A final map contains leaves only.
+
+    A parent cell and one of its descendants must never coexist in the
+    final representation.
+
+Because of that invariant, if multiple points occupy the same parent
+cell and even one point requires finer resolution, the entire active
+group must continue refining. A coarse point therefore cannot block a
+fine-resolution requirement.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Iterable
 
 import numpy as np
 
 
 # ============================================================================
-# A18.3 — HIERARCHICAL FOVEATED 2.5D MAPPER
+# HIERARCHY CONSTANTS
 # ============================================================================
-#
-# Strict non-overlapping hierarchy:
-#
-#   Level 0 -> 0.05 m
-#   Level 1 -> 0.10 m
-#   Level 2 -> 0.20 m
-#   Level 3 -> 0.40 m
-#
-# Refinement rule:
-#
-#   Start with 40 cm root cells.
-#   If any point inside a cell requires finer resolution, refine it.
-#   Continue until the required resolution is reached.
-#
-# Final output contains LEAF CELLS ONLY.
-# No parent cell and descendant cell can coexist.
-#
-# Public API intentionally preserves the original A18.3 helpers and fields.
-# ============================================================================
-
 
 LEVEL_RESOLUTIONS: dict[int, float] = {
     0: 0.05,
@@ -52,23 +58,55 @@ REASON_NAMES: tuple[str, ...] = (
     "DYNAMIC",
 )
 
-_REASON_TO_ID = {
+_REASON_TO_ID: dict[str, int] = {
     reason: index
     for index, reason in enumerate(REASON_NAMES)
 }
 
 
 # ============================================================================
-# DATA STRUCTURE
+# DATA MODEL
 # ============================================================================
 
 
-@dataclass
+@dataclass(frozen=True)
 class HierarchicalLeafMap:
     """
-    Compact representation of the final non-overlapping hierarchical map.
+    Compact representation of the final adaptive 2.5D leaf map.
 
-    Every row represents one final leaf cell.
+    Each row represents one final leaf cell.
+
+    Fields:
+
+        levels:
+            Hierarchy level of each cell.
+
+        resolutions:
+            Physical resolution of each cell.
+
+        ix, iy:
+            Integer horizontal cell coordinates.
+
+        z_min:
+            Minimum observed z in the cell.
+
+        z_max:
+            Maximum observed z in the cell.
+
+        z_mean:
+            Mean observed z in the cell.
+
+        z_variance:
+            Population variance of observed z.
+
+        point_count:
+            Number of input points represented by the cell.
+
+        dominant_reason:
+            Dominant foveation reason for the cell.
+
+        input_points:
+            Total number of input points supplied to the mapper.
     """
 
     levels: np.ndarray
@@ -88,36 +126,42 @@ class HierarchicalLeafMap:
 
     @property
     def active_cells(self) -> int:
-        """Number of final leaf cells."""
+        """Return the number of active final leaf cells."""
         return int(self.levels.size)
-
-    # ------------------------------------------------------------------
-    # Backward-compatible public aliases
-    # ------------------------------------------------------------------
 
     @property
     def level(self) -> np.ndarray:
+        """Compatibility alias for ``levels``."""
         return self.levels
 
     @property
     def resolution(self) -> np.ndarray:
+        """Compatibility alias for ``resolutions``."""
         return self.resolutions
 
 
 # ============================================================================
-# BASIC HELPERS
+# BASIC CONVERSION HELPERS
 # ============================================================================
 
 
-def level_from_resolution(resolution: float) -> int:
+def level_from_resolution(
+    resolution: float,
+) -> int:
     """
-    Convert a supported resolution into its hierarchy level.
+    Convert a supported physical resolution to its hierarchy level.
+
+    Raises:
+        ValueError:
+            If the resolution is unsupported.
     """
-    resolution = float(resolution)
+
+    value = float(resolution)
 
     for known_resolution, level in RESOLUTION_TO_LEVEL.items():
+
         if np.isclose(
-            resolution,
+            value,
             known_resolution,
             rtol=1e-9,
             atol=1e-12,
@@ -125,133 +169,173 @@ def level_from_resolution(resolution: float) -> int:
             return level
 
     raise ValueError(
-        f"Unsupported resolution {resolution}. "
-        f"Expected one of {sorted(RESOLUTION_TO_LEVEL)}."
+        "Unsupported resolution "
+        f"{resolution!r}. Expected one of "
+        f"{tuple(LEVEL_RESOLUTIONS.values())}."
     )
 
 
-def resolution_from_level(level: int) -> float:
+def resolution_from_level(
+    level: int,
+) -> float:
     """
-    Convert hierarchy level into cell resolution.
+    Convert a hierarchy level to its physical resolution.
+
+    Raises:
+        ValueError:
+            If the level is unsupported.
     """
+
     level = int(level)
 
     if level not in LEVEL_RESOLUTIONS:
         raise ValueError(
-            f"Unsupported hierarchy level {level}. "
-            f"Expected one of {sorted(LEVEL_RESOLUTIONS)}."
+            f"Unsupported hierarchy level {level!r}. "
+            f"Expected one of {tuple(LEVEL_RESOLUTIONS)}."
         )
 
     return LEVEL_RESOLUTIONS[level]
 
 
-def _validate_xyz(xyz: np.ndarray) -> np.ndarray:
-    """
-    Validate and normalize XYZ point array.
-    """
-    xyz = np.asarray(xyz, dtype=np.float64)
+# ============================================================================
+# INPUT VALIDATION
+# ============================================================================
 
-    if xyz.ndim != 2 or xyz.shape[1] != 3:
+
+def _validate_xyz(
+    xyz: np.ndarray,
+) -> np.ndarray:
+    """
+    Validate and normalize XYZ input.
+
+    Returns:
+        float64 array with shape (N, 3).
+    """
+
+    array = np.asarray(
+        xyz,
+        dtype=np.float64,
+    )
+
+    if array.ndim != 2:
         raise ValueError(
-            f"xyz must have shape (N, 3), got {xyz.shape}"
+            "xyz must be a 2D array with shape (N, 3)."
         )
 
-    if not np.all(np.isfinite(xyz)):
-        raise ValueError("xyz contains non-finite values.")
+    if array.shape[1] < 3:
+        raise ValueError(
+            "xyz must contain at least three columns: x, y, z."
+        )
 
-    return xyz
+    if not np.all(
+        np.isfinite(array[:, :3])
+    ):
+        raise ValueError(
+            "xyz contains non-finite values."
+        )
+
+    return array
 
 
 def _validate_inputs(
     xyz: np.ndarray,
     desired_resolution: np.ndarray,
-    dominant_reason: Sequence[str],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    dominant_reason: Iterable[str],
+) -> tuple[
+    np.ndarray,
+    np.ndarray,
+    np.ndarray,
+]:
+    """
+    Validate all mapper inputs.
 
-    xyz = _validate_xyz(xyz)
+    Returns:
+        validated_xyz,
+        desired_levels,
+        validated_reasons.
+    """
 
-    desired_resolution = np.asarray(
+    validated_xyz = _validate_xyz(
+        xyz
+    )
+
+    n_points = validated_xyz.shape[0]
+
+    resolutions = np.asarray(
         desired_resolution,
         dtype=np.float64,
     )
 
-    if desired_resolution.ndim != 1:
+    if resolutions.ndim != 1:
         raise ValueError(
             "desired_resolution must be a 1D array."
         )
 
-    if desired_resolution.size != xyz.shape[0]:
+    if resolutions.size != n_points:
         raise ValueError(
-            "desired_resolution length must match xyz."
+            "desired_resolution length must match "
+            f"xyz point count ({n_points})."
         )
 
-    if not np.all(np.isfinite(desired_resolution)):
+    if not np.all(
+        np.isfinite(resolutions)
+    ):
         raise ValueError(
             "desired_resolution contains non-finite values."
         )
 
-    dominant_reason = np.asarray(
-        list(dominant_reason),
+    desired_levels = np.empty(
+        n_points,
+        dtype=np.int8,
+    )
+
+    for index, resolution in enumerate(
+        resolutions
+    ):
+        desired_levels[index] = level_from_resolution(
+            float(resolution)
+        )
+
+    reasons = np.asarray(
+        dominant_reason,
         dtype=object,
     )
 
-    if dominant_reason.ndim != 1:
+    if reasons.ndim != 1:
         raise ValueError(
-            "dominant_reason must be a 1D sequence."
+            "dominant_reason must be a 1D array."
         )
 
-    if dominant_reason.size != xyz.shape[0]:
+    if reasons.size != n_points:
         raise ValueError(
-            "dominant_reason length must match xyz."
+            "dominant_reason length must match "
+            f"xyz point count ({n_points})."
         )
 
-    # Normalize supported resolutions.
-    normalized_resolution = np.empty_like(
-        desired_resolution,
-        dtype=np.float64,
+    invalid_reasons = sorted(
+        {
+            str(reason)
+            for reason in reasons
+            if str(reason) not in _REASON_TO_ID
+        }
     )
 
-    for resolution in RESOLUTION_TO_LEVEL:
-        mask = np.isclose(
-            desired_resolution,
-            resolution,
-            rtol=1e-8,
-            atol=1e-10,
-        )
-        normalized_resolution[mask] = resolution
-
-    supported = np.zeros(
-        desired_resolution.shape,
-        dtype=bool,
-    )
-
-    for resolution in RESOLUTION_TO_LEVEL:
-        supported |= np.isclose(
-            desired_resolution,
-            resolution,
-            rtol=1e-8,
-            atol=1e-10,
-        )
-
-    if not np.all(supported):
-        invalid = desired_resolution[~supported]
-
+    if invalid_reasons:
         raise ValueError(
-            "desired_resolution contains unsupported values. "
-            f"Examples: {invalid[:10]}"
+            "dominant_reason contains unsupported values: "
+            f"{invalid_reasons}. "
+            f"Expected one of {REASON_NAMES}."
         )
 
-    for reason in dominant_reason:
-        if str(reason) not in REASON_NAMES:
-            raise ValueError(
-                f"Invalid dominant reason: {reason!r}. "
-                f"Expected one of {REASON_NAMES}."
-            )
+    reasons = reasons.astype(
+        object,
+        copy=False,
+    )
 
     return (
-        xyz,
-        normalized_resolution,
-        dominant_reason,
+        validated_xyz,
+        desired_levels,
+        reasons,
     )
 
 
@@ -265,45 +349,70 @@ def _cell_indices(
     resolution: float,
 ) -> tuple[np.ndarray, np.ndarray]:
     """
-    Convert XY world coordinates to integer cell indices.
+    Convert XY coordinates to integer cell indices.
 
-    Uses a scale-aware tolerance before flooring so values such as
-    1.2 / 0.05 do not suffer from floating-point boundary errors.
+    A small scale-aware tolerance is applied before flooring so that
+    coordinates which are numerically extremely close to an exact cell
+    boundary do not jump unpredictably between neighboring cells.
+
+    The same global origin is used at every hierarchy level.
     """
 
     resolution = float(resolution)
 
-    scaled_x = xy[:, 0] / resolution
-    scaled_y = xy[:, 1] / resolution
+    if not np.isfinite(resolution) or resolution <= 0.0:
+        raise ValueError(
+            f"resolution must be positive and finite, got {resolution!r}."
+        )
 
-    tolerance = 1e-9 * np.maximum(
-        1.0,
-        np.maximum(
-            np.abs(scaled_x),
-            np.abs(scaled_y),
-        ),
+    xy = np.asarray(
+        xy,
+        dtype=np.float64,
     )
 
-    scaled_x = np.where(
-        np.abs(scaled_x - np.round(scaled_x)) <= tolerance,
-        np.round(scaled_x),
-        scaled_x,
+    if xy.ndim != 2 or xy.shape[1] != 2:
+        raise ValueError(
+            "xy must have shape (N, 2)."
+        )
+
+    scaled = xy / resolution
+
+    # Tolerance is intentionally tiny relative to the coordinate scale.
+    tolerance = (
+        1e-10
+        * np.maximum(
+            1.0,
+            np.abs(scaled),
+        )
     )
 
-    scaled_y = np.where(
-        np.abs(scaled_y - np.round(scaled_y)) <= tolerance,
-        np.round(scaled_y),
-        scaled_y,
+    adjusted = np.where(
+        np.abs(
+            scaled
+            - np.rint(scaled)
+        )
+        <= tolerance,
+        np.rint(scaled),
+        scaled,
     )
 
-    ix = np.floor(scaled_x).astype(np.int64)
-    iy = np.floor(scaled_y).astype(np.int64)
+    ix = np.floor(
+        adjusted[:, 0]
+    ).astype(
+        np.int64
+    )
+
+    iy = np.floor(
+        adjusted[:, 1]
+    ).astype(
+        np.int64
+    )
 
     return ix, iy
 
 
 # ============================================================================
-# GROUPING
+# GROUPING HELPERS
 # ============================================================================
 
 
@@ -312,43 +421,62 @@ def _group_boundaries(
     iy: np.ndarray,
 ) -> np.ndarray:
     """
-    Return group-start indices for sorted cell coordinates.
+    Return boundaries for contiguous groups of equal ix/iy pairs.
 
-    The returned array always contains zero and one-past-the-end.
+    If there are N sorted points and G groups, the returned array has
+    G + 1 entries:
+
+        [0, ..., N]
+
+    such that group k occupies:
+
+        boundaries[k]:boundaries[k + 1]
     """
 
-    n = ix.size
+    if ix.size != iy.size:
+        raise ValueError(
+            "ix and iy must have equal length."
+        )
 
-    if n == 0:
-        return np.array([0], dtype=np.int64)
+    if ix.size == 0:
+        return np.array(
+            [0],
+            dtype=np.int64,
+        )
 
-    if n == 1:
-        return np.array([0, 1], dtype=np.int64)
-
-    changed = (
+    changes = (
         (ix[1:] != ix[:-1])
         | (iy[1:] != iy[:-1])
     )
 
-    starts = np.flatnonzero(changed) + 1
+    starts = np.concatenate(
+        [
+            np.array(
+                [0],
+                dtype=np.int64,
+            ),
+            np.flatnonzero(changes)
+            .astype(np.int64)
+            + 1,
+        ]
+    )
 
     return np.concatenate(
-        (
-            np.array([0], dtype=np.int64),
-            starts.astype(np.int64),
-            np.array([n], dtype=np.int64),
-        )
+        [
+            starts,
+            np.array(
+                [ix.size],
+                dtype=np.int64,
+            ),
+        ]
     )
 
 
-# ============================================================================
-# NUMERIC AGGREGATION
-# ============================================================================
-
-
 def _aggregate_group_arrays(
-    z: np.ndarray,
-    starts: np.ndarray,
+    xyz: np.ndarray,
+    sorted_indices: np.ndarray,
+    begin: np.ndarray,
+    end: np.ndarray,
 ) -> tuple[
     np.ndarray,
     np.ndarray,
@@ -357,34 +485,46 @@ def _aggregate_group_arrays(
     np.ndarray,
 ]:
     """
-    Aggregate Z statistics for sorted groups.
+    Aggregate Z statistics for contiguous sorted groups.
 
     Returns:
 
-        z_min
-        z_max
-        z_mean
-        z_variance
+        z_min,
+        z_max,
+        z_mean,
+        z_variance,
         point_count
     """
 
-    if starts.size <= 1:
-        empty = np.empty(0, dtype=np.float64)
+    group_count = begin.size
 
-        return (
-            empty,
-            empty,
-            empty,
-            empty,
-            np.empty(0, dtype=np.int64),
+    point_count = (
+        end - begin
+    ).astype(
+        np.int64
+    )
+
+    if group_count == 0:
+        empty = np.empty(
+            0,
+            dtype=np.float64,
         )
 
-    begin = starts[:-1]
-    end = starts[1:]
+        return (
+            empty.copy(),
+            empty.copy(),
+            empty.copy(),
+            empty.copy(),
+            np.empty(
+                0,
+                dtype=np.int64,
+            ),
+        )
 
-    counts = (
-        end - begin
-    ).astype(np.int64)
+    z = xyz[
+        sorted_indices,
+        2,
+    ]
 
     z_min = np.minimum.reduceat(
         z,
@@ -396,65 +536,74 @@ def _aggregate_group_arrays(
         begin,
     )
 
-    sums = np.add.reduceat(
+    z_sum = np.add.reduceat(
         z,
         begin,
     )
 
-    z_mean = sums / counts
-
-    squared_sums = np.add.reduceat(
+    z_squared_sum = np.add.reduceat(
         z * z,
         begin,
     )
 
+    z_mean = (
+        z_sum
+        / point_count
+    )
+
     z_variance = (
-        squared_sums / counts
+        z_squared_sum
+        / point_count
         - z_mean * z_mean
     )
 
-    # Floating-point roundoff can create tiny negative variance.
+    # Protect against tiny negative floating-point roundoff.
     z_variance = np.maximum(
         z_variance,
         0.0,
     )
 
     return (
-        z_min,
-        z_max,
-        z_mean,
-        z_variance,
-        counts,
+        z_min.astype(
+            np.float64,
+            copy=False,
+        ),
+        z_max.astype(
+            np.float64,
+            copy=False,
+        ),
+        z_mean.astype(
+            np.float64,
+            copy=False,
+        ),
+        z_variance.astype(
+            np.float64,
+            copy=False,
+        ),
+        point_count,
     )
-
-
-# ============================================================================
-# OPTIMIZED REASON AGGREGATION
-# ============================================================================
 
 
 def _dominant_reasons(
     reasons: np.ndarray,
-    starts: np.ndarray,
+    begin: np.ndarray,
+    end: np.ndarray,
 ) -> np.ndarray:
     """
-    Determine the dominant reason for each grouped cell.
+    Determine the dominant reason for every group.
 
-    Optimized implementation.
-
-    The old implementation called np.unique() independently for every
-    group. With ~1.3 million groups/iterations under profiling this became
-    the primary A18.3 bottleneck.
-
-    Since the ontology has only five possible reasons, encode them as
-    integers and count them directly.
+    Ties are deterministic and follow REASON_NAMES ordering.
     """
 
-    if starts.size <= 1:
-        return np.empty(
-            0,
-            dtype=object,
-        )
+    group_count = begin.size
+
+    output = np.empty(
+        group_count,
+        dtype=object,
+    )
+
+    if group_count == 0:
+        return output
 
     reason_ids = np.empty(
         reasons.size,
@@ -462,62 +611,58 @@ def _dominant_reasons(
     )
 
     for reason, reason_id in _REASON_TO_ID.items():
+
         reason_ids[
             reasons == reason
         ] = reason_id
 
-    begin = starts[:-1]
-    end = starts[1:]
+    for group_index in range(
+        group_count
+    ):
 
-    group_count = begin.size
+        start = begin[
+            group_index
+        ]
 
-    # Group index for every point.
-    group_ids = np.repeat(
-        np.arange(group_count, dtype=np.int64),
-        end - begin,
-    )
+        stop = end[
+            group_index
+        ]
 
-    # Encode reason + group into one flat index.
-    flat_indices = (
-        group_ids * len(REASON_NAMES)
-        + reason_ids.astype(np.int64)
-    )
+        counts = np.bincount(
+            reason_ids[
+                start:stop
+            ],
+            minlength=len(
+                REASON_NAMES
+            ),
+        )
 
-    counts = np.bincount(
-        flat_indices,
-        minlength=(
-            group_count
-            * len(REASON_NAMES)
-        ),
-    )
+        output[
+            group_index
+        ] = REASON_NAMES[
+            int(
+                np.argmax(counts)
+            )
+        ]
 
-    counts = counts.reshape(
-        group_count,
-        len(REASON_NAMES),
-    )
-
-    dominant_ids = np.argmax(
-        counts,
-        axis=1,
-    )
-
-    return np.asarray(
-        REASON_NAMES,
-        dtype=object,
-    )[dominant_ids]
+    return output
 
 
 # ============================================================================
-# FINAL GROUP CREATION
+# INTERNAL FINALIZATION
 # ============================================================================
 
 
 def _append_final_groups_at_level(
     xyz: np.ndarray,
-    desired_levels: np.ndarray,
-    reasons: np.ndarray,
+    sorted_indices: np.ndarray,
+    sorted_ix: np.ndarray,
+    sorted_iy: np.ndarray,
+    sorted_reasons: np.ndarray,
+    begin: np.ndarray,
+    end: np.ndarray,
+    group_ids: np.ndarray,
     level: int,
-    point_indices: np.ndarray,
     final_levels: list[np.ndarray],
     final_ix: list[np.ndarray],
     final_iy: list[np.ndarray],
@@ -529,47 +674,39 @@ def _append_final_groups_at_level(
     final_reason: list[np.ndarray],
 ) -> None:
     """
-    Aggregate points into final cells at a specific hierarchy level.
-
-    This helper only receives points that have already been determined
-    to terminate at this level.
+    Aggregate and append selected terminal groups.
     """
 
-    if point_indices.size == 0:
+    if group_ids.size == 0:
         return
 
-    resolution = LEVEL_RESOLUTIONS[level]
-
-    selected_xyz = xyz[point_indices]
-    selected_reasons = reasons[point_indices]
-
-    ix, iy = _cell_indices(
-        selected_xyz[:, :2],
-        resolution,
-    )
-
-    order = np.lexsort(
-        (
-            iy,
-            ix,
-        )
-    )
-
-    ix_sorted = ix[order]
-    iy_sorted = iy[order]
-
-    point_indices_sorted = point_indices[order]
-
-    z_sorted = xyz[
-        point_indices_sorted,
-        2,
+    selected_begin = begin[
+        group_ids
     ]
 
-    reasons_sorted = selected_reasons[order]
+    selected_end = end[
+        group_ids
+    ]
 
-    starts = _group_boundaries(
-        ix_sorted,
-        iy_sorted,
+    selected_ix = sorted_ix[
+        selected_begin
+    ].astype(
+        np.int64,
+        copy=False,
+    )
+
+    selected_iy = sorted_iy[
+        selected_begin
+    ].astype(
+        np.int64,
+        copy=False,
+    )
+
+    point_counts = (
+        selected_end
+        - selected_begin
+    ).astype(
+        np.int64
     )
 
     (
@@ -577,47 +714,59 @@ def _append_final_groups_at_level(
         z_max,
         z_mean,
         z_variance,
-        point_count,
+        _,
     ) = _aggregate_group_arrays(
-        z_sorted,
-        starts,
+        xyz,
+        sorted_indices,
+        selected_begin,
+        selected_end,
     )
 
-    dominant_reason = _dominant_reasons(
-        reasons_sorted,
-        starts,
+    reasons = _dominant_reasons(
+        sorted_reasons,
+        selected_begin,
+        selected_end,
     )
 
     final_levels.append(
         np.full(
-            ix_sorted.size
-            - 0
-            - (
-                0
-            ),
+            group_ids.size,
             level,
             dtype=np.int8,
         )
     )
 
     final_ix.append(
-        ix_sorted[
-            starts[:-1]
-        ]
+        selected_ix
     )
 
     final_iy.append(
-        iy_sorted[
-            starts[:-1]
-        ]
+        selected_iy
     )
 
-    final_z_min.append(z_min)
-    final_z_max.append(z_max)
-    final_z_mean.append(z_mean)
-    final_z_variance.append(z_variance)
-    final_point_count.append(point_count)
-    final_reason.append(dominant_reason)
+    final_z_min.append(
+        z_min
+    )
+
+    final_z_max.append(
+        z_max
+    )
+
+    final_z_mean.append(
+        z_mean
+    )
+
+    final_z_variance.append(
+        z_variance
+    )
+
+    final_point_count.append(
+        point_counts
+    )
+
+    final_reason.append(
+        reasons
+    )
 
 
 # ============================================================================
@@ -628,20 +777,18 @@ def _append_final_groups_at_level(
 def build_hierarchical_foveated_map(
     xyz: np.ndarray,
     desired_resolution: np.ndarray,
-    dominant_reason: Sequence[str],
+    dominant_reason: Iterable[str],
 ) -> HierarchicalLeafMap:
     """
-    Build the final non-overlapping hierarchical foveated map.
+    Build a non-overlapping hierarchical foveated 2.5D leaf map.
 
     Parameters
     ----------
     xyz:
-        Point cloud with shape (N, 3).
+        Point cloud with shape (N, 3) or (N, >=3).
 
     desired_resolution:
-        Per-point desired resolution.
-
-        Supported values:
+        Per-point desired resolution. Supported values are:
 
             0.05
             0.10
@@ -649,34 +796,46 @@ def build_hierarchical_foveated_map(
             0.40
 
     dominant_reason:
-        Per-point dominant foveation reason.
+        Per-point foveation reason.
 
     Returns
     -------
     HierarchicalLeafMap
-        Final leaf-only hierarchical map.
+        Final adaptive leaf map.
 
-    Algorithm
-    ---------
-    1. Begin at 40 cm root cells.
-    2. Determine whether each root cell contains points requesting
-       finer resolution.
-    3. Refine those cells into 20 cm children.
-    4. Continue to 10 cm.
-    5. Continue to 5 cm.
-    6. Store only the final leaves.
+    Refinement semantics
+    --------------------
+    The hierarchy is processed from coarse to fine.
 
-    Therefore:
+    At each level, points are grouped into cells.
 
-        no duplicate leaves
-        no parent/child coexistence
-        aligned hierarchy
-        complete point conservation
+    If all points in a cell are satisfied at the current level or a
+    coarser level, that cell becomes a final leaf.
+
+    If at least one point requires finer resolution, the complete active
+    group is refined.
+
+    This intentionally uses the MINIMUM required hierarchy level.
+
+    Example:
+
+        requirements = [level 0, level 3]
+
+    means:
+
+        5 cm requirement + 40 cm requirement.
+
+    Since level 0 is finer, the parent must continue refining. The
+    coarse point cannot terminate the parent and thereby block the fine
+    requirement.
+
+    This design maintains the stronger invariant that no parent and
+    descendant leaves coexist in the final map.
     """
 
     (
         xyz,
-        desired_resolution,
+        desired_levels,
         dominant_reason,
     ) = _validate_inputs(
         xyz,
@@ -686,58 +845,58 @@ def build_hierarchical_foveated_map(
 
     n_points = xyz.shape[0]
 
+    # ------------------------------------------------------------------
+    # Empty input.
+    # ------------------------------------------------------------------
+
     if n_points == 0:
-        empty_i8 = np.empty(
-            0,
-            dtype=np.int8,
-        )
-
-        empty_i64 = np.empty(
-            0,
-            dtype=np.int64,
-        )
-
-        empty_f64 = np.empty(
-            0,
-            dtype=np.float64,
-        )
-
-        empty_reason = np.empty(
-            0,
-            dtype=object,
-        )
 
         return HierarchicalLeafMap(
-            levels=empty_i8,
-            resolutions=empty_f64,
-            ix=empty_i64,
-            iy=empty_i64,
-            z_min=empty_f64,
-            z_max=empty_f64,
-            z_mean=empty_f64,
-            z_variance=empty_f64,
-            point_count=empty_i64,
-            dominant_reason=empty_reason,
+            levels=np.empty(
+                0,
+                dtype=np.int8,
+            ),
+            resolutions=np.empty(
+                0,
+                dtype=np.float64,
+            ),
+            ix=np.empty(
+                0,
+                dtype=np.int64,
+            ),
+            iy=np.empty(
+                0,
+                dtype=np.int64,
+            ),
+            z_min=np.empty(
+                0,
+                dtype=np.float64,
+            ),
+            z_max=np.empty(
+                0,
+                dtype=np.float64,
+            ),
+            z_mean=np.empty(
+                0,
+                dtype=np.float64,
+            ),
+            z_variance=np.empty(
+                0,
+                dtype=np.float64,
+            ),
+            point_count=np.empty(
+                0,
+                dtype=np.int64,
+            ),
+            dominant_reason=np.empty(
+                0,
+                dtype=object,
+            ),
             input_points=0,
         )
 
-    desired_levels = np.empty(
-        n_points,
-        dtype=np.int8,
-    )
-
-    for resolution, level in RESOLUTION_TO_LEVEL.items():
-        mask = np.isclose(
-            desired_resolution,
-            resolution,
-            rtol=1e-8,
-            atol=1e-10,
-        )
-
-        desired_levels[mask] = level
-
     # ------------------------------------------------------------------
-    # Final output containers
+    # Final output buffers.
     # ------------------------------------------------------------------
 
     final_levels: list[np.ndarray] = []
@@ -753,7 +912,9 @@ def build_hierarchical_foveated_map(
     final_reason: list[np.ndarray] = []
 
     # ------------------------------------------------------------------
-    # Start with every point at the 40 cm root level.
+    # Start with every point active.
+    #
+    # The first grouping happens at the 40 cm root level.
     # ------------------------------------------------------------------
 
     active_indices = np.arange(
@@ -763,15 +924,6 @@ def build_hierarchical_foveated_map(
 
     # ------------------------------------------------------------------
     # Process hierarchy from coarse to fine.
-    #
-    # At each level:
-    #
-    #   If a cell contains only points whose desired level is this level
-    #   or coarser -> finalize it.
-    #
-    #   If at least one point needs finer resolution -> keep the entire
-    #   group active and refine it.
-    #
     # ------------------------------------------------------------------
 
     for level in (
@@ -784,7 +936,9 @@ def build_hierarchical_foveated_map(
         if active_indices.size == 0:
             break
 
-        resolution = LEVEL_RESOLUTIONS[level]
+        resolution = LEVEL_RESOLUTIONS[
+            level
+        ]
 
         active_xyz = xyz[
             active_indices
@@ -795,6 +949,7 @@ def build_hierarchical_foveated_map(
             resolution,
         )
 
+        # Deterministic spatial ordering.
         order = np.lexsort(
             (
                 iy,
@@ -833,42 +988,54 @@ def build_hierarchical_foveated_map(
         group_count = begin.size
 
         if group_count == 0:
+
             active_indices = np.empty(
                 0,
                 dtype=np.int64,
             )
+
             continue
 
         # --------------------------------------------------------------
-        # Maximum required refinement inside each cell.
+        # IMPORTANT:
+        #
+        # The minimum required level determines whether a group must
+        # refine.
+        #
+        # Level 0 = finest.
+        # Level 3 = coarsest.
+        #
+        # Therefore:
+        #
+        #     min([0, 3]) = 0
+        #
+        # correctly identifies that the group contains a fine
+        # requirement.
         # --------------------------------------------------------------
 
-        max_required_level = np.maximum.reduceat(
+        min_required_level = np.minimum.reduceat(
             sorted_desired_levels,
             begin,
         )
 
         # --------------------------------------------------------------
-        # A group can terminate if no point inside it requests a
-        # finer level.
+        # A group terminates when its finest requirement is satisfied
+        # at the current level.
         #
-        # Level numbering:
+        # Example:
         #
-        #   0 = finest
-        #   3 = coarsest
+        #     current level = 3
+        #     requirements = [0, 3]
         #
-        # Therefore a point requiring level 0 forces refinement through
-        # all levels.
+        #     min_required_level = 0
         #
-        # A group terminates at the current level when:
+        #     0 >= 3 -> False
         #
-        #   max_required_level >= current_level
-        #
-        # because all points are satisfied at this level or coarser.
+        # Therefore the group refines.
         # --------------------------------------------------------------
 
         terminal_mask = (
-            max_required_level
+            min_required_level
             >= level
         )
 
@@ -881,188 +1048,29 @@ def build_hierarchical_foveated_map(
         )
 
         # --------------------------------------------------------------
-        # Finalize groups that can stop at this level.
+        # Finalize groups that have reached their required resolution.
         # --------------------------------------------------------------
 
-        if terminal_group_ids.size > 0:
-
-            terminal_begin = begin[
-                terminal_group_ids
-            ]
-
-            terminal_end = end[
-                terminal_group_ids
-            ]
-
-            terminal_point_counts = (
-                terminal_end
-                - terminal_begin
-            ).astype(np.int64)
-
-            terminal_ix = sorted_ix[
-                terminal_begin
-            ]
-
-            terminal_iy = sorted_iy[
-                terminal_begin
-            ]
-
-            # ----------------------------------------------------------
-            # Numeric aggregation.
-            #
-            # We aggregate each terminal group directly using its
-            # contiguous sorted point range.
-            # ----------------------------------------------------------
-
-            terminal_z_min = np.empty(
-                terminal_group_ids.size,
-                dtype=np.float64,
-            )
-
-            terminal_z_max = np.empty(
-                terminal_group_ids.size,
-                dtype=np.float64,
-            )
-
-            terminal_z_mean = np.empty(
-                terminal_group_ids.size,
-                dtype=np.float64,
-            )
-
-            terminal_z_variance = np.empty(
-                terminal_group_ids.size,
-                dtype=np.float64,
-            )
-
-            terminal_reason = np.empty(
-                terminal_group_ids.size,
-                dtype=object,
-            )
-
-            # ----------------------------------------------------------
-            # Aggregate each terminal group.
-            #
-            # This loop is only over final cells, not over individual
-            # points. It preserves correctness and public semantics.
-            # ----------------------------------------------------------
-
-            for output_index, group_id in enumerate(
-                terminal_group_ids
-            ):
-
-                start = begin[
-                    group_id
-                ]
-
-                stop = end[
-                    group_id
-                ]
-
-                point_ids = sorted_indices[
-                    start:stop
-                ]
-
-                z = xyz[
-                    point_ids,
-                    2,
-                ]
-
-                terminal_z_min[
-                    output_index
-                ] = np.min(z)
-
-                terminal_z_max[
-                    output_index
-                ] = np.max(z)
-
-                mean = np.mean(z)
-
-                terminal_z_mean[
-                    output_index
-                ] = mean
-
-                variance = np.var(z)
-
-                terminal_z_variance[
-                    output_index
-                ] = max(
-                    0.0,
-                    float(variance),
-                )
-
-                group_reasons = sorted_reasons[
-                    start:stop
-                ]
-
-                # Only up to five possible reasons.
-                reason_ids = np.empty(
-                    group_reasons.size,
-                    dtype=np.int8,
-                )
-
-                for reason, reason_id in _REASON_TO_ID.items():
-                    reason_ids[
-                        group_reasons == reason
-                    ] = reason_id
-
-                counts = np.bincount(
-                    reason_ids,
-                    minlength=len(REASON_NAMES),
-                )
-
-                terminal_reason[
-                    output_index
-                ] = REASON_NAMES[
-                    int(
-                        np.argmax(counts)
-                    )
-                ]
-
-            final_levels.append(
-                np.full(
-                    terminal_group_ids.size,
-                    level,
-                    dtype=np.int8,
-                )
-            )
-
-            final_ix.append(
-                terminal_ix.astype(
-                    np.int64,
-                    copy=False,
-                )
-            )
-
-            final_iy.append(
-                terminal_iy.astype(
-                    np.int64,
-                    copy=False,
-                )
-            )
-
-            final_z_min.append(
-                terminal_z_min
-            )
-
-            final_z_max.append(
-                terminal_z_max
-            )
-
-            final_z_mean.append(
-                terminal_z_mean
-            )
-
-            final_z_variance.append(
-                terminal_z_variance
-            )
-
-            final_point_count.append(
-                terminal_point_counts
-            )
-
-            final_reason.append(
-                terminal_reason
-            )
+        _append_final_groups_at_level(
+            xyz=xyz,
+            sorted_indices=sorted_indices,
+            sorted_ix=sorted_ix,
+            sorted_iy=sorted_iy,
+            sorted_reasons=sorted_reasons,
+            begin=begin,
+            end=end,
+            group_ids=terminal_group_ids,
+            level=level,
+            final_levels=final_levels,
+            final_ix=final_ix,
+            final_iy=final_iy,
+            final_z_min=final_z_min,
+            final_z_max=final_z_max,
+            final_z_mean=final_z_mean,
+            final_z_variance=final_z_variance,
+            final_point_count=final_point_count,
+            final_reason=final_reason,
+        )
 
         # --------------------------------------------------------------
         # Keep points belonging to groups that need refinement.
@@ -1109,6 +1117,7 @@ def build_hierarchical_foveated_map(
     # ------------------------------------------------------------------
 
     if active_indices.size != 0:
+
         raise RuntimeError(
             "Hierarchical refinement ended with "
             f"{active_indices.size} unassigned points."
@@ -1288,8 +1297,6 @@ def level_distribution(
 ) -> dict[int, int]:
     """
     Count final leaf cells by hierarchy level.
-
-    Compatibility helper retained for the A18.3 test suite.
     """
 
     return {
@@ -1307,8 +1314,6 @@ def reason_distribution(
 ) -> dict[str, int]:
     """
     Count final leaf cells by dominant foveation reason.
-
-    Compatibility helper retained for the A18.3 test suite.
     """
 
     return {
@@ -1325,7 +1330,7 @@ def resolution_distribution(
     fmap: HierarchicalLeafMap,
 ) -> dict[float, int]:
     """
-    Count final leaf cells by resolution.
+    Count final leaf cells by physical resolution.
     """
 
     return {
@@ -1352,16 +1357,17 @@ def validate_leaf_partition(
     fmap: HierarchicalLeafMap,
 ) -> bool:
     """
-    Validate the structural properties of the final leaf map.
+    Validate structural properties of the final leaf map.
 
     Checks:
 
         - no duplicate leaves
         - correct level/resolution relationship
-        - correct cell alignment
+        - valid integer cell indices
         - no parent/child coexistence
         - positive point counts
         - finite numeric statistics
+        - valid reasons
         - complete point conservation
     """
 
@@ -1391,18 +1397,47 @@ def validate_leaf_partition(
         return False
 
     # ------------------------------------------------------------------
+    # Array lengths.
+    # ------------------------------------------------------------------
+
+    arrays = (
+        fmap.levels,
+        fmap.resolutions,
+        fmap.ix,
+        fmap.iy,
+        fmap.z_min,
+        fmap.z_max,
+        fmap.z_mean,
+        fmap.z_variance,
+        fmap.point_count,
+        fmap.dominant_reason,
+    )
+
+    if any(
+        array.size != n_cells
+        for array in arrays
+    ):
+        return False
+
+    # ------------------------------------------------------------------
     # Level/resolution relationship.
     # ------------------------------------------------------------------
 
-    expected_resolutions = np.asarray(
-        [
-            LEVEL_RESOLUTIONS[
-                int(level)
-            ]
-            for level in fmap.levels
-        ],
-        dtype=np.float64,
-    )
+    try:
+
+        expected_resolutions = np.asarray(
+            [
+                LEVEL_RESOLUTIONS[
+                    int(level)
+                ]
+                for level in fmap.levels
+            ],
+            dtype=np.float64,
+        )
+
+    except (KeyError, ValueError, TypeError):
+
+        return False
 
     if not np.allclose(
         fmap.resolutions,
@@ -1413,7 +1448,7 @@ def validate_leaf_partition(
         return False
 
     # ------------------------------------------------------------------
-    # Cell alignment.
+    # Cell alignment / integer validity.
     # ------------------------------------------------------------------
 
     for level in LEVEL_RESOLUTIONS:
@@ -1429,7 +1464,9 @@ def validate_leaf_partition(
             level
         ]
 
-        # Integer cell indices are inherently aligned.
+        if resolution <= 0:
+            return False
+
         if not np.all(
             np.isfinite(
                 fmap.ix[mask]
@@ -1464,13 +1501,10 @@ def validate_leaf_partition(
         ):
             return False
 
-        if resolution <= 0:
-            return False
-
     # ------------------------------------------------------------------
     # Duplicate leaf cells.
     #
-    # Same level + ix + iy must never appear twice.
+    # Same level + ix + iy must never occur twice.
     # ------------------------------------------------------------------
 
     keys = np.rec.fromarrays(
@@ -1534,8 +1568,8 @@ def validate_leaf_partition(
     # ------------------------------------------------------------------
     # Parent/child exclusion.
     #
-    # If a level L cell exists, a child at L-1 must not occupy the same
-    # parent footprint.
+    # A level L cell and a level L-1 child must never coexist if the
+    # child lies inside that parent's footprint.
     # ------------------------------------------------------------------
 
     for child_level in (
@@ -1544,7 +1578,9 @@ def validate_leaf_partition(
         2,
     ):
 
-        parent_level = child_level + 1
+        parent_level = (
+            child_level + 1
+        )
 
         child_mask = (
             fmap.levels
@@ -1578,8 +1614,6 @@ def validate_leaf_partition(
             parent_mask
         ]
 
-        # Every two child cells correspond to one parent cell in each
-        # axis, therefore floor division by 2 gives the parent index.
         derived_parent_ix = np.floor_divide(
             child_ix,
             2,
@@ -1670,7 +1704,7 @@ def has_parent_child_overlap(
     fmap: HierarchicalLeafMap,
 ) -> bool:
     """
-    Return True if a parent and descendant leaf coexist.
+    Return True if a parent and child leaf coexist.
 
     A valid final hierarchical map should return False.
     """
@@ -1681,7 +1715,9 @@ def has_parent_child_overlap(
         2,
     ):
 
-        parent_level = child_level + 1
+        parent_level = (
+            child_level + 1
+        )
 
         child_mask = (
             fmap.levels
