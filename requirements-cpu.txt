@@ -1,4 +1,5 @@
 # Statistics / data tools only. NO torch, NO GPU packages.
-# Use this in a plain CPU runtime.
-numpy==1.26.4
-PyYAML==6.0.1
+# Works on any modern Python (tested on 3.13 CPU runtime).
+# Do NOT pin numpy to 1.26 here — that is only for the GPU ML env.
+numpy>=1.24
+PyYAML>=6.0
