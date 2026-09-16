@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 
 from perception_v1.src.data.canonical import (
     build_canonical_point_frame,

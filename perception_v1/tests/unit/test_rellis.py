@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import numpy as np
@@ -42,7 +42,6 @@ def test_loader_and_zero_xyz_policy():
             [-1.0, 2.0, 0.5, 0.003],
         ], dtype=np.float32)
 
-        # These native IDs are observed in the frozen RELLIS mapping.
         labels = np.array(
             [3, 4, 17],
             dtype=np.uint32,
@@ -51,39 +50,39 @@ def test_loader_and_zero_xyz_policy():
         scan.tofile(scan_path)
         labels.tofile(label_path)
 
+        # Raw loader MUST preserve all raw records.
         xyz, intensity = load_rellis_scan(scan_path)
 
-        assert xyz.shape == (3, 3)
-        assert intensity.shape == (3,)
-
-        # Loader must NOT delete zero XYZ.
         assert len(xyz) == 3
+        assert len(intensity) == 3
 
         frame = load_rellis_frame(
             scan_path,
             label_path,
         )
 
-        assert frame.dataset_id == "RELLIS-3D"
+        # Canonical frame MUST contain valid points only.
+        assert len(frame.xyz) == 2
 
-        # S7-B:
-        # finite XYZ AND XYZ != (0,0,0)
-        assert frame.validity_mask.tolist() == [
-            True,
-            False,
-            True,
-        ]
+        assert np.allclose(
+            frame.xyz,
+            [
+                [1.0, 2.0, 3.0],
+                [-1.0, 2.0, 0.5],
+            ],
+        )
 
-        # Raw source indexing must remain intact.
-        assert frame.source_point_id.tolist() == [
-            0,
-            1,
-            2,
-        ]
+        # Canonical IDs assigned AFTER validity filtering.
+        assert frame.source_point_id.tolist() == [0, 1]
 
-        assert len(frame.unified_semantic_target) == 3
+        # Raw provenance remains recoverable.
+        assert frame.raw_source_index.tolist() == [0, 2]
 
-        # Frozen RELLIS normalization must remain [0,1].
+        # Every canonical point is valid.
+        assert frame.validity_mask.tolist() == [True, True]
+
+        assert len(frame.unified_semantic_target) == 2
+
         assert np.all(
             frame.intensity_normalized >= 0.0
         )

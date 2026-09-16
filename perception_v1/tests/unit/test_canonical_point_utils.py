@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 
 from perception_v1.src.data.canonical import build_canonical_point_frame
 from perception_v1.src.data.normalization import normalize_intensity
@@ -69,10 +69,20 @@ def test_canonical_frame():
         intensity,
     )
 
-    assert frame.xyz.shape == (2, 3)
-    assert frame.validity_mask.tolist() == [True, False]
-    assert frame.source_point_id.tolist() == [0, 1]
-    assert np.allclose(frame.intensity_normalized, intensity)
+    # Canonical frame contains valid points only.
+    assert frame.xyz.shape == (1, 3)
+    assert frame.validity_mask.tolist() == [True]
+
+    # IDs are assigned after validity filtering.
+    assert frame.source_point_id.tolist() == [0]
+
+    # Raw provenance is preserved.
+    assert frame.raw_source_index.tolist() == [0]
+    # Only the valid point survives canonical filtering.
+    assert np.allclose(
+        frame.intensity_normalized,
+        intensity[[0]],
+    )
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import numpy as np
@@ -78,7 +78,8 @@ def test_scan_and_frame_loading():
         )
 
         assert frame.dataset_id == "SemanticKITTI"
-        assert len(frame.xyz) == 3
+        # Zero-XYZ raw point is excluded from canonical points.
+        assert len(frame.xyz) == 2
 
         # native 10 -> unified car = 18
         assert frame.unified_semantic_target[0] == 18
@@ -86,14 +87,16 @@ def test_scan_and_frame_loading():
         # native 0 -> ignore = 0
         assert frame.unified_semantic_target[1] == 0
 
-        # zero XYZ must be invalid
         assert frame.validity_mask.tolist() == [
             True,
             True,
-            False,
         ]
 
-        assert frame.source_point_id.tolist() == [0, 1, 2]
+        # IDs assigned after validity filtering.
+        assert frame.source_point_id.tolist() == [0, 1]
+
+        # Raw records remain traceable.
+        assert frame.raw_source_index.tolist() == [0, 1]
 
 
 def test_unsupervised_loading():

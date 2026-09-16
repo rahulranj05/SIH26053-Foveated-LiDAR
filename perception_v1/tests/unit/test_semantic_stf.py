@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import numpy as np

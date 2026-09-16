@@ -1,7 +1,6 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from dataclasses import dataclass
-
 import numpy as np
 
 from perception_v1.src.data.normalization import normalize_intensity
@@ -23,6 +22,7 @@ class CanonicalPointFrame:
     elevation: np.ndarray
     validity_mask: np.ndarray
     source_point_id: np.ndarray
+    raw_source_index: np.ndarray
     unified_semantic_target: np.ndarray | None
 
 
@@ -30,11 +30,7 @@ def map_semantic_targets(
     dataset_id: str,
     native_labels: np.ndarray,
 ) -> np.ndarray:
-    """
-    Convert native dataset labels to frozen unified labels 0..24.
 
-    Unknown native IDs are rejected rather than silently mapped.
-    """
     labels = np.asarray(native_labels).reshape(-1)
 
     if dataset_id not in NATIVE_TO_UNIFIED:
@@ -52,8 +48,8 @@ def map_semantic_targets(
 
     if unknown:
         raise ValueError(
-            f"{dataset_id} contains native labels absent from frozen mapping: "
-            f"{unknown}"
+            f"{dataset_id} contains native labels absent "
+            f"from frozen mapping: {unknown}"
         )
 
     target = np.empty(len(labels), dtype=np.int64)
@@ -72,6 +68,7 @@ def build_canonical_point_frame(
 ) -> CanonicalPointFrame:
 
     xyz = np.asarray(xyz, dtype=np.float32)
+
     intensity_raw = np.asarray(
         intensity_raw,
         dtype=np.float32,
@@ -82,40 +79,73 @@ def build_canonical_point_frame(
             f"xyz must have shape (N, 3), got {xyz.shape}"
         )
 
-    if len(intensity_raw) != len(xyz):
+    raw_count = len(xyz)
+
+    if len(intensity_raw) != raw_count:
         raise ValueError(
             f"Intensity length {len(intensity_raw)} "
-            f"!= point count {len(xyz)}"
+            f"!= point count {raw_count}"
         )
 
-    validity_mask = compute_validity_mask(xyz)
+    labels = None
 
-    range_m, azimuth, elevation = compute_spherical_features(xyz)
+    if native_labels is not None:
+        labels = np.asarray(native_labels).reshape(-1)
 
-    intensity_normalized = normalize_intensity(
-        dataset_id,
-        intensity_raw,
-    )
+        if len(labels) != raw_count:
+            raise ValueError(
+                f"Label length {len(labels)} "
+                f"!= point count {raw_count}"
+            )
 
+    # -------------------------------------------------
+    # S7-B / S7-H:
+    # validity is determined on the raw point records.
+    # -------------------------------------------------
+    raw_validity_mask = compute_validity_mask(xyz)
+
+    # Preserve provenance back to the original raw record.
+    raw_source_index = np.flatnonzero(
+        raw_validity_mask
+    ).astype(np.int64)
+
+    # -------------------------------------------------
+    # Canonical representation contains VALID points only.
+    # -------------------------------------------------
+    xyz = xyz[raw_validity_mask]
+    intensity_raw = intensity_raw[raw_validity_mask]
+
+    if labels is not None:
+        labels = labels[raw_validity_mask]
+
+    # Canonical IDs are assigned AFTER validity filtering.
     source_point_id = np.arange(
         len(xyz),
         dtype=np.int64,
     )
 
+    # All points in the canonical frame are valid by definition.
+    validity_mask = np.ones(
+        len(xyz),
+        dtype=bool,
+    )
+
+    # Frozen normalization is applied to retained points.
+    intensity_normalized = normalize_intensity(
+        dataset_id,
+        intensity_raw,
+    )
+
+    range_m, azimuth, elevation = (
+        compute_spherical_features(xyz)
+    )
+
     unified_target = None
 
-    if native_labels is not None:
-        native_labels = np.asarray(native_labels).reshape(-1)
-
-        if len(native_labels) != len(xyz):
-            raise ValueError(
-                f"Label length {len(native_labels)} "
-                f"!= point count {len(xyz)}"
-            )
-
+    if labels is not None:
         unified_target = map_semantic_targets(
             dataset_id,
-            native_labels,
+            labels,
         )
 
     return CanonicalPointFrame(
@@ -128,5 +158,6 @@ def build_canonical_point_frame(
         elevation=elevation,
         validity_mask=validity_mask,
         source_point_id=source_point_id,
+        raw_source_index=raw_source_index,
         unified_semantic_target=unified_target,
     )
