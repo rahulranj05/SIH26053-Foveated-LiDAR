@@ -72,7 +72,7 @@ def voxelize_points(
         xyz.astype(np.float64) / float(voxel_size_m)
     ).astype(np.int64)
 
-    # np.unique gives deterministic lexicographic voxel ordering.
+    # Deterministic lexicographic voxel ordering.
     voxel_coordinates, point_to_voxel_inverse = np.unique(
         point_voxel_coordinates,
         axis=0,
@@ -90,29 +90,53 @@ def voxelize_points(
         axis=1,
     )
 
-    num_voxels = len(voxel_coordinates)
-
-    representatives = np.empty(
-        num_voxels,
+    # ---------------------------------------------------------
+    # Vectorized representative selection.
+    #
+    # Ordering keys, from primary to final tie-break:
+    #   1. voxel ID
+    #   2. Euclidean range squared
+    #   3. canonical point index
+    #
+    # The first point in each voxel after this ordering is
+    # therefore exactly the frozen S7-E representative.
+    # ---------------------------------------------------------
+    point_indices = np.arange(
+        len(xyz),
         dtype=np.int64,
     )
 
-    for voxel_id in range(num_voxels):
-        point_indices = np.flatnonzero(
-            point_to_voxel_inverse == voxel_id
+    order = np.lexsort(
+        (
+            point_indices,
+            ranges_squared,
+            point_to_voxel_inverse,
         )
+    )
 
-        local_ranges = ranges_squared[point_indices]
+    sorted_voxel_ids = point_to_voxel_inverse[order]
 
-        minimum_range = np.min(local_ranges)
+    first_in_voxel = np.empty(
+        len(order),
+        dtype=bool,
+    )
 
-        tied_indices = point_indices[
-            local_ranges == minimum_range
-        ]
+    first_in_voxel[0] = True
+    first_in_voxel[1:] = (
+        sorted_voxel_ids[1:]
+        != sorted_voxel_ids[:-1]
+    )
 
-        # point_indices are canonical point indices in ascending order.
-        representatives[voxel_id] = int(
-            np.min(tied_indices)
+    representatives = order[
+        first_in_voxel
+    ].astype(
+        np.int64,
+        copy=False,
+    )
+
+    if len(representatives) != len(voxel_coordinates):
+        raise RuntimeError(
+            "Internal voxel representative count mismatch"
         )
 
     return VoxelizationResult(
