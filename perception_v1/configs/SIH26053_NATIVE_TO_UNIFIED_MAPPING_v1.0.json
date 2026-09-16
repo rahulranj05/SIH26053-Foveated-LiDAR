@@ -1,0 +1,1085 @@
+{
+  "schema": "SIH26053_NATIVE_TO_UNIFIED_MAPPING",
+  "version": "v1.0",
+  "status": "FROZEN",
+  "frozen_utc": "2026-09-16T07:32:58.812806+00:00",
+  "immutability_policy": "Do not edit mappings in place. Any change to a native-to-unified decision requires a new mapping version and corresponding ontology compatibility audit.",
+  "mapping_count": 107,
+  "observed_mapping_count": 98,
+  "mappings": [
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 0,
+      "native_name": "unlabeled",
+      "observed": true,
+      "point_count": 56614254,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 1,
+      "native_name": "outlier",
+      "observed": true,
+      "point_count": 883428,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 10,
+      "native_name": "car",
+      "observed": true,
+      "point_count": 125200807,
+      "unified_id": 18,
+      "unified_class": "car",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 11,
+      "native_name": "bicycle",
+      "observed": true,
+      "point_count": 639562,
+      "unified_id": 21,
+      "unified_class": "bicycle",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 13,
+      "native_name": "bus",
+      "observed": true,
+      "point_count": 65505,
+      "unified_id": 19,
+      "unified_class": "heavy_vehicle",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 15,
+      "native_name": "motorcycle",
+      "observed": true,
+      "point_count": 1281899,
+      "unified_id": 22,
+      "unified_class": "motorcycle",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 16,
+      "native_name": "on-rails",
+      "observed": false,
+      "point_count": 0,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 18,
+      "native_name": "truck",
+      "observed": true,
+      "point_count": 4856064,
+      "unified_id": 19,
+      "unified_class": "heavy_vehicle",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 20,
+      "native_name": "other-vehicle",
+      "observed": true,
+      "point_count": 7240593,
+      "unified_id": 20,
+      "unified_class": "other_vehicle",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 30,
+      "native_name": "person",
+      "observed": true,
+      "point_count": 519686,
+      "unified_id": 23,
+      "unified_class": "person",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 31,
+      "native_name": "bicyclist",
+      "observed": true,
+      "point_count": 599,
+      "unified_id": 24,
+      "unified_class": "rider",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 32,
+      "native_name": "motorcyclist",
+      "observed": true,
+      "point_count": 22750,
+      "unified_id": 24,
+      "unified_class": "rider",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 40,
+      "native_name": "road",
+      "observed": true,
+      "point_count": 554938571,
+      "unified_id": 1,
+      "unified_class": "paved_drivable",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 44,
+      "native_name": "parking",
+      "observed": true,
+      "point_count": 40525481,
+      "unified_id": 3,
+      "unified_class": "parking",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 48,
+      "native_name": "sidewalk",
+      "observed": true,
+      "point_count": 398464216,
+      "unified_id": 2,
+      "unified_class": "sidewalk",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 49,
+      "native_name": "other-ground",
+      "observed": true,
+      "point_count": 9631626,
+      "unified_id": 4,
+      "unified_class": "other_ground",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 50,
+      "native_name": "building",
+      "observed": true,
+      "point_count": 368681416,
+      "unified_id": 12,
+      "unified_class": "building",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 51,
+      "native_name": "fence",
+      "observed": true,
+      "point_count": 182644338,
+      "unified_id": 13,
+      "unified_class": "fence",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 52,
+      "native_name": "other-structure",
+      "observed": true,
+      "point_count": 6913914,
+      "unified_id": 14,
+      "unified_class": "other_structure",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 60,
+      "native_name": "lane-marking",
+      "observed": true,
+      "point_count": 110644,
+      "unified_id": 1,
+      "unified_class": "paved_drivable",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 70,
+      "native_name": "vegetation",
+      "observed": true,
+      "point_count": 773132761,
+      "unified_id": 10,
+      "unified_class": "vegetation",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 71,
+      "native_name": "trunk",
+      "observed": true,
+      "point_count": 19692693,
+      "unified_id": 11,
+      "unified_class": "trunk",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 72,
+      "native_name": "terrain",
+      "observed": true,
+      "point_count": 247714395,
+      "unified_id": 5,
+      "unified_class": "natural_terrain",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 80,
+      "native_name": "pole",
+      "observed": true,
+      "point_count": 8378712,
+      "unified_id": 16,
+      "unified_class": "pole",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 81,
+      "native_name": "traffic-sign",
+      "observed": true,
+      "point_count": 1823430,
+      "unified_id": 17,
+      "unified_class": "traffic_sign",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 99,
+      "native_name": "other-object",
+      "observed": true,
+      "point_count": 31497474,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 252,
+      "native_name": "moving-car",
+      "observed": true,
+      "point_count": 5086784,
+      "unified_id": 18,
+      "unified_class": "car",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 253,
+      "native_name": "moving-bicyclist",
+      "observed": true,
+      "point_count": 604865,
+      "unified_id": 24,
+      "unified_class": "rider",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 254,
+      "native_name": "moving-person",
+      "observed": true,
+      "point_count": 774073,
+      "unified_id": 23,
+      "unified_class": "person",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 255,
+      "native_name": "moving-motorcyclist",
+      "observed": true,
+      "point_count": 87766,
+      "unified_id": 24,
+      "unified_class": "rider",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 256,
+      "native_name": "moving-on-rails",
+      "observed": false,
+      "point_count": 0,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 257,
+      "native_name": "moving-bus",
+      "observed": true,
+      "point_count": 266513,
+      "unified_id": 19,
+      "unified_class": "heavy_vehicle",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 258,
+      "native_name": "moving-truck",
+      "observed": true,
+      "point_count": 238730,
+      "unified_id": 19,
+      "unified_class": "heavy_vehicle",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticKITTI",
+      "native_id": 259,
+      "native_name": "moving-other-vehicle",
+      "observed": true,
+      "point_count": 105545,
+      "unified_id": 20,
+      "unified_class": "other_vehicle",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 0,
+      "native_name": "void",
+      "observed": true,
+      "point_count": 762573527,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 1,
+      "native_name": "dirt",
+      "observed": false,
+      "point_count": 0,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 3,
+      "native_name": "grass",
+      "observed": true,
+      "point_count": 374898416,
+      "unified_id": 9,
+      "unified_class": "low_vegetation",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 4,
+      "native_name": "tree",
+      "observed": true,
+      "point_count": 207848291,
+      "unified_id": 10,
+      "unified_class": "vegetation",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 5,
+      "native_name": "pole",
+      "observed": true,
+      "point_count": 43374,
+      "unified_id": 16,
+      "unified_class": "pole",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 6,
+      "native_name": "water",
+      "observed": true,
+      "point_count": 225117,
+      "unified_id": 8,
+      "unified_class": "water",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 7,
+      "native_name": "sky",
+      "observed": false,
+      "point_count": 0,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 8,
+      "native_name": "vehicle",
+      "observed": true,
+      "point_count": 311863,
+      "unified_id": 20,
+      "unified_class": "other_vehicle",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 9,
+      "native_name": "object",
+      "observed": true,
+      "point_count": 15537,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 10,
+      "native_name": "asphalt",
+      "observed": true,
+      "point_count": 752,
+      "unified_id": 1,
+      "unified_class": "paved_drivable",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 12,
+      "native_name": "building",
+      "observed": true,
+      "point_count": 10,
+      "unified_id": 12,
+      "unified_class": "building",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 15,
+      "native_name": "log",
+      "observed": true,
+      "point_count": 876759,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 17,
+      "native_name": "person",
+      "observed": true,
+      "point_count": 18016337,
+      "unified_id": 23,
+      "unified_class": "person",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 18,
+      "native_name": "fence",
+      "observed": true,
+      "point_count": 1760969,
+      "unified_id": 13,
+      "unified_class": "fence",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 19,
+      "native_name": "bush",
+      "observed": true,
+      "point_count": 364568071,
+      "unified_id": 10,
+      "unified_class": "vegetation",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 23,
+      "native_name": "concrete",
+      "observed": true,
+      "point_count": 25066989,
+      "unified_id": 1,
+      "unified_class": "paved_drivable",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 27,
+      "native_name": "barrier",
+      "observed": true,
+      "point_count": 4788174,
+      "unified_id": 15,
+      "unified_class": "barrier",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 31,
+      "native_name": "puddle",
+      "observed": true,
+      "point_count": 2149870,
+      "unified_id": 8,
+      "unified_class": "water",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 33,
+      "native_name": "mud",
+      "observed": true,
+      "point_count": 7793216,
+      "unified_id": 6,
+      "unified_class": "mud",
+      "ignore": false
+    },
+    {
+      "dataset": "RELLIS-3D",
+      "native_id": 34,
+      "native_name": "rubble",
+      "observed": true,
+      "point_count": 5874760,
+      "unified_id": 7,
+      "unified_class": "rubble",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 0,
+      "native_name": "unlabeled",
+      "observed": true,
+      "point_count": 13813669,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 1,
+      "native_name": "car",
+      "observed": true,
+      "point_count": 3058161,
+      "unified_id": 18,
+      "unified_class": "car",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 2,
+      "native_name": "bicycle",
+      "observed": true,
+      "point_count": 77114,
+      "unified_id": 21,
+      "unified_class": "bicycle",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 3,
+      "native_name": "motorcycle",
+      "observed": true,
+      "point_count": 2738,
+      "unified_id": 22,
+      "unified_class": "motorcycle",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 4,
+      "native_name": "truck",
+      "observed": true,
+      "point_count": 653743,
+      "unified_id": 19,
+      "unified_class": "heavy_vehicle",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 5,
+      "native_name": "other-vehicle",
+      "observed": true,
+      "point_count": 305868,
+      "unified_id": 20,
+      "unified_class": "other_vehicle",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 6,
+      "native_name": "person",
+      "observed": true,
+      "point_count": 401618,
+      "unified_id": 23,
+      "unified_class": "person",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 7,
+      "native_name": "bicyclist",
+      "observed": true,
+      "point_count": 19387,
+      "unified_id": 24,
+      "unified_class": "rider",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 8,
+      "native_name": "motorcyclist",
+      "observed": true,
+      "point_count": 1305,
+      "unified_id": 24,
+      "unified_class": "rider",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 9,
+      "native_name": "road",
+      "observed": true,
+      "point_count": 20790315,
+      "unified_id": 1,
+      "unified_class": "paved_drivable",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 10,
+      "native_name": "parking",
+      "observed": true,
+      "point_count": 1435896,
+      "unified_id": 3,
+      "unified_class": "parking",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 11,
+      "native_name": "sidewalk",
+      "observed": true,
+      "point_count": 8170374,
+      "unified_id": 2,
+      "unified_class": "sidewalk",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 12,
+      "native_name": "other-ground",
+      "observed": true,
+      "point_count": 1965437,
+      "unified_id": 4,
+      "unified_class": "other_ground",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 13,
+      "native_name": "building",
+      "observed": true,
+      "point_count": 12915164,
+      "unified_id": 12,
+      "unified_class": "building",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 14,
+      "native_name": "fence",
+      "observed": true,
+      "point_count": 3761342,
+      "unified_id": 13,
+      "unified_class": "fence",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 15,
+      "native_name": "vegetation",
+      "observed": true,
+      "point_count": 8717594,
+      "unified_id": 10,
+      "unified_class": "vegetation",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 16,
+      "native_name": "trunk",
+      "observed": true,
+      "point_count": 890572,
+      "unified_id": 11,
+      "unified_class": "trunk",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 17,
+      "native_name": "terrain",
+      "observed": true,
+      "point_count": 13253193,
+      "unified_id": 5,
+      "unified_class": "natural_terrain",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 18,
+      "native_name": "pole",
+      "observed": true,
+      "point_count": 626006,
+      "unified_id": 16,
+      "unified_class": "pole",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 19,
+      "native_name": "traffic-sign",
+      "observed": true,
+      "point_count": 297419,
+      "unified_id": 17,
+      "unified_class": "traffic_sign",
+      "ignore": false
+    },
+    {
+      "dataset": "SemanticSTF",
+      "native_id": 20,
+      "native_name": "invalid",
+      "observed": true,
+      "point_count": 7101365,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 0,
+      "native_name": "noise",
+      "observed": true,
+      "point_count": 12561,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 1,
+      "native_name": "animal",
+      "observed": false,
+      "point_count": 0,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 2,
+      "native_name": "human.pedestrian.adult",
+      "observed": true,
+      "point_count": 43812,
+      "unified_id": 23,
+      "unified_class": "person",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 3,
+      "native_name": "human.pedestrian.child",
+      "observed": true,
+      "point_count": 230,
+      "unified_id": 23,
+      "unified_class": "person",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 4,
+      "native_name": "human.pedestrian.construction_worker",
+      "observed": true,
+      "point_count": 1412,
+      "unified_id": 23,
+      "unified_class": "person",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 5,
+      "native_name": "human.pedestrian.personal_mobility",
+      "observed": true,
+      "point_count": 4096,
+      "unified_id": 24,
+      "unified_class": "rider",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 6,
+      "native_name": "human.pedestrian.police_officer",
+      "observed": true,
+      "point_count": 64,
+      "unified_id": 23,
+      "unified_class": "person",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 7,
+      "native_name": "human.pedestrian.stroller",
+      "observed": false,
+      "point_count": 0,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 8,
+      "native_name": "human.pedestrian.wheelchair",
+      "observed": false,
+      "point_count": 0,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 9,
+      "native_name": "movable_object.barrier",
+      "observed": true,
+      "point_count": 55298,
+      "unified_id": 15,
+      "unified_class": "barrier",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 10,
+      "native_name": "movable_object.debris",
+      "observed": true,
+      "point_count": 48,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 11,
+      "native_name": "movable_object.pushable_pullable",
+      "observed": true,
+      "point_count": 2293,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 12,
+      "native_name": "movable_object.trafficcone",
+      "observed": true,
+      "point_count": 6206,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 13,
+      "native_name": "static_object.bicycle_rack",
+      "observed": true,
+      "point_count": 4476,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 14,
+      "native_name": "vehicle.bicycle",
+      "observed": true,
+      "point_count": 1463,
+      "unified_id": 21,
+      "unified_class": "bicycle",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 15,
+      "native_name": "vehicle.bus.bendy",
+      "observed": true,
+      "point_count": 40536,
+      "unified_id": 19,
+      "unified_class": "heavy_vehicle",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 16,
+      "native_name": "vehicle.bus.rigid",
+      "observed": true,
+      "point_count": 29694,
+      "unified_id": 19,
+      "unified_class": "heavy_vehicle",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 17,
+      "native_name": "vehicle.car",
+      "observed": true,
+      "point_count": 521237,
+      "unified_id": 18,
+      "unified_class": "car",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 18,
+      "native_name": "vehicle.construction",
+      "observed": true,
+      "point_count": 39300,
+      "unified_id": 19,
+      "unified_class": "heavy_vehicle",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 19,
+      "native_name": "vehicle.emergency.ambulance",
+      "observed": false,
+      "point_count": 0,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 20,
+      "native_name": "vehicle.emergency.police",
+      "observed": false,
+      "point_count": 0,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 21,
+      "native_name": "vehicle.motorcycle",
+      "observed": true,
+      "point_count": 6713,
+      "unified_id": 22,
+      "unified_class": "motorcycle",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 22,
+      "native_name": "vehicle.trailer",
+      "observed": true,
+      "point_count": 12787,
+      "unified_id": 19,
+      "unified_class": "heavy_vehicle",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 23,
+      "native_name": "vehicle.truck",
+      "observed": true,
+      "point_count": 304234,
+      "unified_id": 19,
+      "unified_class": "heavy_vehicle",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 24,
+      "native_name": "flat.driveable_surface",
+      "observed": true,
+      "point_count": 4069879,
+      "unified_id": 1,
+      "unified_class": "paved_drivable",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 25,
+      "native_name": "flat.other",
+      "observed": true,
+      "point_count": 150153,
+      "unified_id": 4,
+      "unified_class": "other_ground",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 26,
+      "native_name": "flat.sidewalk",
+      "observed": true,
+      "point_count": 746905,
+      "unified_id": 2,
+      "unified_class": "sidewalk",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 27,
+      "native_name": "flat.terrain",
+      "observed": true,
+      "point_count": 696526,
+      "unified_id": 5,
+      "unified_class": "natural_terrain",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 28,
+      "native_name": "static.manmade",
+      "observed": true,
+      "point_count": 2067585,
+      "unified_id": 14,
+      "unified_class": "other_structure",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 29,
+      "native_name": "static.other",
+      "observed": true,
+      "point_count": 16710,
+      "unified_id": 14,
+      "unified_class": "other_structure",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 30,
+      "native_name": "static.vegetation",
+      "observed": true,
+      "point_count": 1565272,
+      "unified_id": 10,
+      "unified_class": "vegetation",
+      "ignore": false
+    },
+    {
+      "dataset": "nuScenes",
+      "native_id": 31,
+      "native_name": "vehicle.ego",
+      "observed": true,
+      "point_count": 3626718,
+      "unified_id": 0,
+      "unified_class": "ignore",
+      "ignore": true
+    }
+  ],
+  "source_candidate": {
+    "path": "/content/drive/MyDrive/SIH26053/source_metadata/semantic_inventory/S5_FINAL_NATIVE_TO_UNIFIED_MAPPING_CANDIDATE.json",
+    "sha256": "cc5586dfa1aea7cbcd9dbb69f31c3a4c907aedb19078d0318999a6c6157763c7"
+  }
+}
