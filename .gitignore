@@ -1,2 +1,45 @@
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets / local configuration
+.env
+.env.*
+!.env.example
+
+# ML checkpoints / weights
+*.pt
+*.pth
+*.ckpt
+*.onnx
+
+# Large datasets / local data
+data/
+dataset/
+datasets/*
+!datasets/.gitkeep
+raw_data/
+processed_data/
+
+# Generated runtime artifacts
+runtime/
+cache/
+logs/
+
+# Temporary files
+*.tmp
+*.log
